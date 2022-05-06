@@ -1,3 +1,3 @@
-document.getElementById('playVid').onclick = function () {
-    document.getElementById('video').play();
+document.getElementById("playVid").onclick = function () {
+    document.getElementById("video").play();
 };
