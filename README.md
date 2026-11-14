@@ -35,6 +35,10 @@ Each type of data has its own melody. Storm belts, ocean winds or a carbon-monox
 - 📀 **Record magazine.** 6 ready-made records (albums of 5 frames each) made from NASA climate maps. The jukebox magazine rotates, the chosen record lifts up into the arch and starts spinning, and its image becomes the vinyl label.
 - 🌍 **Live Earth photos.** Fetch real photos of the whole sunlit Earth from **NASA EPIC** (the DSCOVR satellite, 1.5 million km away) for any date since 2015. The 🌍 button picks a random day.
 - 🖼️ **Your own images.** Drop in JPG, PNG, WebP, GIF, BMP or AVIF files. Click a thumbnail to play that image, use ✓ / + to choose which images go into the piece.
+- 🥁 **Backing beat.** Lo-fi, House, Trip-hop or Cosmic drums and bass under the melody. The tempo locks to the step length and the bass plays the scale's root, so it always fits. It is included in the WAV export too.
+- 🎛️ **Beat editor.** A 16-step grid for kick, snare, clap, rim, hi-hat, open hat, shaker and bass, with accents, an octave-up bass, tempo, swing, brightness and bass length. Edits play live and are saved as your own *Custom* beat.
+- 🔊 **Separate volumes** for the melody and the beat.
+- 🌐 **3 languages.** English, Polish and Ukrainian, switchable in the top-right corner. The choice is remembered, and the default follows the browser language.
 - 🎚️ **7 presets.** Classic, Ambient, Music box, Dreamy, Dark, Arpeggio, Mystery.
 - 🛠️ **15 advanced settings.** Every one has a **?** button that opens a short in-app guide.
 - 🌌 **Audio-reactive nebula.** Soft WebGL ribbons behind the jukebox breathe with the bass, mids and highs.
@@ -130,6 +134,8 @@ docs/jukebox/
 ├── index.html        page layout: jukebox stage, settings panels, help dialog
 ├── style.css         cosmic theme, jukebox overlay positioning, responsive layout
 ├── app.js            sonification engine, playback, presets, EPIC download, WAV/MIDI export
+├── beat.js           backing beat: one bar synthesised with OfflineAudioContext, tiled to the track length
+├── i18n.js           translations (EN / PL / UA) and the language switcher logic
 ├── carousel.js       rotating record magazine (2D canvas drawn into the jukebox)
 ├── space.js          starfield + audio-reactive WebGL2 nebula
 ├── jukebox.webp      jukebox artwork

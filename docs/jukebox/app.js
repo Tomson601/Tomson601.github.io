@@ -2,6 +2,7 @@
  * X = time, Y = pitch, brightness = loudness, notes snapped to a musical scale. */
 (() => {
   "use strict";
+  const T = (key, vars) => window.I18N.t(key, vars);
 
   const SR = 44100;
   const MAX_SOURCE_SIDE = 1024; // sources are downscaled on load (the score is at most 192x48)
@@ -36,7 +37,7 @@
     { group: "Melody", id: "rows", label: "Pitch rows", min: 8, max: 48, step: 2, value: 46 },
     { group: "Rhythm", id: "columns", label: "Time steps per image", min: 16, max: 192, step: 8, value: 128 },
     { group: "Rhythm", id: "noteLen", label: "Step length", min: 0.05, max: 0.5, step: 0.01, value: 0.18, fmt: (v) => `${v.toFixed(2)} s` },
-    { group: "Rhythm", id: "tail", label: "Note ring-out", min: 1, max: 6, step: 0.5, value: 3, fmt: (v) => `${v}× step` },
+    { group: "Rhythm", id: "tail", label: "Note ring-out", min: 1, max: 6, step: 0.5, value: 3, fmt: (v) => T("x_step", { v }) },
     { group: "Dynamics", id: "maxVoices", label: "Max notes at once", min: 1, max: 10, step: 1, value: 8 },
     { group: "Dynamics", id: "threshold", label: "Brightness threshold", min: 0, max: 0.9, step: 0.05, value: 0.25 },
     { group: "Dynamics", id: "gamma", label: "Loudness contrast (gamma)", min: 0.5, max: 3, step: 0.1, value: 1.5 },
@@ -44,27 +45,9 @@
     { group: "Dynamics", id: "highPct", label: "White point (percentile)", min: 80, max: 100, step: 0.5, value: 100 },
     { group: "Sound", id: "timbre", label: "Timbre", type: "select", options: Object.keys(TIMBRES), value: "classic" },
     { group: "Sound", id: "attack", label: "Attack", min: 2, max: 120, step: 1, value: 10, fmt: (v) => `${v} ms` },
-    { group: "Sound", id: "reverb", label: "Reverb", min: 0, max: 0.7, step: 0.05, value: 0.35, fmt: (v) => (v ? v.toFixed(2) : "off") },
+    { group: "Sound", id: "reverb", label: "Reverb", min: 0, max: 0.7, step: 0.05, value: 0.35, fmt: (v) => (v ? v.toFixed(2) : T("off")) },
     { group: "Sound", id: "width", label: "Stereo width", min: 0, max: 1, step: 0.05, value: 0.6 },
   ];
-  // shown in the Help popup (Advanced settings)
-  const HELP = {
-    scale: "Which notes are allowed. Every pitch row is snapped to this scale, so the music always stays in key. Pentatonic scales never clash, lydian and dorian sound bright or jazzy, minor sounds sad, whole tone sounds dreamy and sci-fi, chromatic uses all 12 notes and is the most dissonant.",
-    rootMidi: "The pitch of the bottom row of the image. Lower values give a deeper sound. The rows above climb up the scale from this note.",
-    rows: "How many different pitches the image height is split into. More rows means a wider range and finer detail; fewer rows gives a simpler melody.",
-    columns: "How many slices each image is cut into from left to right. Each slice is one beat. More steps make the piece longer and more detailed.",
-    noteLen: "How long one time step lasts. Together with Time steps it sets the tempo and length: total time ≈ time steps × step length × number of images.",
-    tail: "How long each note keeps ringing after its step, as a multiple of the step length. Higher values let notes overlap and blend into chords and pads.",
-    maxVoices: "In every time step only the N brightest cells of that column are played. 1 gives a single melody line; higher values give fuller chords (and a busier sound).",
-    threshold: "Cells darker than this stay silent (they are dimmed in the Score). Raise it to play only the brightest features of the image, lower it to hear more of it.",
-    gamma: "How brightness turns into loudness. Above 1, bright areas stand out and dim ones get much quieter; below 1, everything plays at a more equal volume.",
-    lowPct: "Before playing, the image contrast is stretched. Pixels darker than this percentile count as pure black. Raise it if the image looks greyish or washed out.",
-    highPct: "Pixels brighter than this percentile count as full white. Lower it if a few very bright spots make the rest of the image too quiet.",
-    timbre: "The tone colour of each note (which overtones are added). Classic is the original notebook sound, sine is pure and soft, soft is mellow, hollow is clarinet-like, bright is rich and buzzy.",
-    attack: "How quickly each note fades in. Short values sound plucky and percussive; long values give soft swells.",
-    reverb: "Adds echoes, so it sounds like a large hall or open space. Off gives a dry, close sound.",
-    width: "Stereo spread. Low notes are placed to the left and high notes to the right; 0 keeps everything in the centre (mono), 1 is the widest.",
-  };
   const DEFAULTS = Object.fromEntries(PARAMS.map((p) => [p.id, p.value]));
 
   const PRESETS = [
@@ -88,10 +71,21 @@
   // DOM
   // ------------------------------------------------------------------------ //
   const $ = (id) => document.getElementById(id);
-  const setStatus = (msg, isError = false) => {
-    $("status").textContent = msg;
-    $("status").classList.toggle("error", isError);
+  // status line: messages are kept as functions so they can be re-rendered when the language changes
+  let statusFn = null, statusErr = false;
+  const renderStatus = () => {
+    $("status").textContent = statusFn ? statusFn() : T("status_intro");
+    $("status").classList.toggle("error", statusErr);
   };
+  const setStatus = (msg, isError = false) => {
+    statusFn = typeof msg === "function" ? msg : () => msg;
+    statusErr = isError;
+    renderStatus();
+  };
+  const say = (key, vars, isError = false) => setStatus(() => T(key, typeof vars === "function" ? vars() : vars), isError);
+  // a source whose display name follows the language
+  const liveName = (src, fn) => Object.defineProperty(src, "name", { get: fn, configurable: true });
+  const presetName = (i) => (i >= 0 ? T("pr_" + PRESETS[i].name) : T("custom"));
 
   const state = {
     sources: [],   // { name, gray: Float32Array, w, h, thumb, on } – the images that play
@@ -100,10 +94,16 @@
     ctx: null, analyser: null, node: null, startedAt: 0,
     dirty: true,
     preset: 0,     // index into PRESETS, -1 = custom
+    musicVol: 1,   // volume of the image melody (0–1)
   };
+  try {
+    const v = parseFloat(localStorage.getItem("jukebox.musicVol"));
+    if (v >= 0 && v <= 1) state.musicVol = v;
+  } catch {}
 
   const inputs = {};
   const shows = {};
+  const ui = { legends: {}, labels: {}, infos: {}, options: {} };
   function buildParams() {
     const root = $("params");
     const groups = {};
@@ -111,7 +111,8 @@
       if (!groups[p.group]) {
         const fs = document.createElement("fieldset");
         const lg = document.createElement("legend");
-        lg.textContent = p.group;
+        lg.textContent = T("g_" + p.group);
+        ui.legends[p.group] = lg;
         const grid = document.createElement("div");
         grid.className = "grid";
         fs.append(lg, grid);
@@ -121,9 +122,11 @@
       const lab = document.createElement("label");
       let input;
       if (p.type === "select") {
-        lab.textContent = p.label;
+        const name = document.createElement("span");
+        lab.append(name);
+        ui.labels[p.id] = name;
         input = document.createElement("select");
-        for (const o of p.options) input.add(new Option(label(o), o));
+        ui.options[p.id] = p.options.map((o) => { const op = new Option(label(o), o); input.add(op); return op; });
         lab.append(input);
         shows[p.id] = () => {};
       } else {
@@ -131,7 +134,9 @@
         head.className = "row";
         const val = document.createElement("span");
         val.className = "val";
-        head.append(p.label, val);
+        const name = document.createElement("span");
+        ui.labels[p.id] = name;
+        head.append(name, val);
         input = document.createElement("input");
         Object.assign(input, { type: "range", min: p.min, max: p.max, step: p.step });
         shows[p.id] = () => (val.textContent = p.fmt ? p.fmt(+input.value) : input.value);
@@ -142,7 +147,7 @@
       info.type = "button";
       info.className = "info";
       info.textContent = "?";
-      info.setAttribute("aria-label", `What does “${p.label}” do?`);
+      ui.infos[p.id] = info;
       info.addEventListener("click", (e) => { e.preventDefault(); openHelp(p.id); });
       lab.prepend(info);
       input.id = "p-" + p.id;
@@ -150,30 +155,47 @@
       inputs[p.id] = input;
       groups[p.group].append(lab);
     }
+    relabelParams();
+  }
+
+  function relabelParams() {
+    for (const [g, lg] of Object.entries(ui.legends)) lg.textContent = T("g_" + g);
+    for (const p of PARAMS) {
+      const name = T("p_" + p.id);
+      ui.labels[p.id].textContent = name;
+      ui.infos[p.id].setAttribute("aria-label", T("what_does", { x: name }));
+      (ui.options[p.id] || []).forEach((op) => (op.textContent = T((p.id === "scale" ? "sc_" : "tb_") + op.value)));
+      shows[p.id]();
+    }
   }
 
   function buildHelp() {
-    const body = $("help-body");
+    renderHelp();
+    const dlg = $("help");
+    $("help-close").addEventListener("click", () => dlg.close());
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); }); // click on the backdrop
+    $("btn-help").addEventListener("click", () => openHelp());
+  }
+
+  function renderHelp() {
+    const body = $("help-list");
+    body.replaceChildren();
     let group = null, list = null;
     for (const p of PARAMS) {
       if (p.group !== group) {
         group = p.group;
         const h = document.createElement("h4");
-        h.textContent = group;
+        h.textContent = T("g_" + group);
         list = document.createElement("dl");
         body.append(h, list);
       }
       const dt = document.createElement("dt");
       dt.id = "help-" + p.id;
-      dt.textContent = p.label;
+      dt.textContent = T("p_" + p.id);
       const dd = document.createElement("dd");
-      dd.textContent = HELP[p.id] || "";
+      dd.textContent = T("h_" + p.id);
       list.append(dt, dd);
     }
-    const dlg = $("help");
-    $("help-close").addEventListener("click", () => dlg.close());
-    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); }); // click on the backdrop
-    $("btn-help").addEventListener("click", () => openHelp());
   }
 
   function openHelp(id) {
@@ -207,25 +229,27 @@
     const root = $("presets");
     PRESETS.forEach((pr, i) => {
       const b = document.createElement("button");
-      b.textContent = pr.name;
+      b.dataset.preset = pr.name;
       b.setAttribute("role", "radio");
       b.addEventListener("click", () => applyPreset(i));
       root.append(b);
     });
     const c = document.createElement("button");
-    c.textContent = "Custom";
     c.className = "custom";
     c.setAttribute("role", "radio");
     c.addEventListener("click", () => ($("advanced").open = true));
     root.append(c);
+    renderPresetNames();
+  }
+
+  function renderPresetNames() {
+    [...$("presets").children].forEach((b, i) => (b.textContent = presetName(i < PRESETS.length ? i : -1)));
   }
 
   function renderPresetState() {
     [...$("presets").children].forEach((b, i) =>
       b.setAttribute("aria-checked", String(i === state.preset || (state.preset < 0 && i === PRESETS.length))));
-    $("preset-desc").textContent = state.preset >= 0
-      ? PRESETS[state.preset].desc
-      : "Custom settings – tweak them under Advanced settings.";
+    $("preset-desc").textContent = state.preset >= 0 ? T("pd_" + PRESETS[state.preset].name) : T("custom_desc");
     $("btn-reset").hidden = state.preset >= 0;
   }
 
@@ -243,6 +267,7 @@
 
   function paramsChanged() {
     state.dirty = true;
+    if (state.beat) renderBeat();
     updateButtons();
     drawViz();
     if (state.node) restartTimer();
@@ -627,6 +652,17 @@
       state.analyser.fftSize = 1024;
       state.analyser.smoothingTimeConstant = 0.55;
       state.analyser.connect(state.ctx.destination);
+      // gentle limiter so melody + beat never clip
+      state.mix = state.ctx.createDynamicsCompressor();
+      state.mix.threshold.value = -3; state.mix.knee.value = 2; state.mix.ratio.value = 12;
+      state.mix.attack.value = 0.003; state.mix.release.value = 0.12;
+      state.mix.connect(state.analyser);
+      state.beatGain = state.ctx.createGain();
+      state.beatGain.gain.value = state.beat.style === "off" ? 0 : state.beat.vol;
+      state.beatGain.connect(state.mix);
+      state.musicGain = state.ctx.createGain();
+      state.musicGain.gain.value = state.musicVol;
+      state.musicGain.connect(state.mix);
     }
     state.ctx.resume();
   }
@@ -645,7 +681,242 @@
     buildVizImage(matrices, p);
   }
 
+  // ---- backing beat ----
+  const BEATS = ["off", "lofi", "house", "triphop", "cosmic", "custom"];
+  state.beat = { style: "off", last: "lofi", vol: 0.5, custom: null, buf: null, key: "", node: null, job: null };
+  try {
+    const saved = JSON.parse(localStorage.getItem("jukebox.beat") || "{}");
+    if (saved.custom?.rows && window.Beat) state.beat.custom = saved.custom;
+    const ok = (s) => BEATS.includes(s) && (s !== "custom" || state.beat.custom);
+    if (ok(saved.style)) state.beat.style = saved.style;
+    if (ok(saved.last) && saved.last !== "off") state.beat.last = saved.last;
+    if (saved.vol >= 0 && saved.vol <= 1) state.beat.vol = saved.vol;
+  } catch {}
+  const beatOn = () => state.beat.style !== "off" && !!window.Beat;
+  const patternOf = (style) => (style === "custom" ? state.beat.custom : window.Beat.STYLES[style]);
+  // the pattern shown in the editor (when the beat is off: the one the 🥁 button would turn on)
+  const editStyle = () => (state.beat.style === "off" ? state.beat.last : state.beat.style);
+  const beatName = (style) => T("beat_" + style);
+
+  function beatKey() {
+    const r = state.result;
+    return [JSON.stringify(patternOf(state.beat.style)), r.L.length, r.p.noteLen, r.p.rootMidi, r.p.columns, r.matrices.length].join("|");
+  }
+
+  /** Beat buffer for the current composition (rendered once per pattern/tempo/length). */
+  async function ensureBeat() {
+    if (!beatOn() || !state.result) return null;
+    const key = beatKey();
+    if (state.beat.key === key && state.beat.buf) return state.beat.buf;
+    if (state.beat.job?.key === key) return state.beat.job.promise;
+    const r = state.result;
+    const promise = window.Beat.render(patternOf(state.beat.style), {
+      length: r.L.length, sr: SR, noteLen: r.p.noteLen, rootMidi: r.p.rootMidi,
+      musicEnd: r.p.columns * r.matrices.length * r.p.noteLen,
+    }).then((buf) => {
+      if (state.beat.job?.key === key) { state.beat.buf = buf; state.beat.key = key; state.beat.job = null; }
+      return buf;
+    });
+    state.beat.job = { key, promise };
+    return promise;
+  }
+
+  function killBeat() {
+    const n = state.beat.node;
+    if (!n) return;
+    state.beat.node = null;
+    try { n.stop(); } catch {}
+    n.disconnect();
+  }
+
+  // start the beat in sync with the melody (`when` in context time)
+  function startBeat(buf, when) {
+    killBeat();
+    if (!buf || !state.node) return;
+    const off = when - state.startedAt;
+    if (off >= buf.duration) return;
+    const n = state.ctx.createBufferSource();
+    n.buffer = buf;
+    n.connect(state.beatGain);
+    n.start(when, Math.max(0, off));
+    state.beat.node = n;
+  }
+
+  function saveBeat() {
+    const b = state.beat;
+    try { localStorage.setItem("jukebox.beat", JSON.stringify({ style: b.style, last: b.last, vol: b.vol, custom: b.custom })); } catch {}
+  }
+
+  // (re)start the beat while playing – after a style change or an edit
+  let beatRefreshT = 0;
+  function refreshBeat(delay = 0) {
+    if (state.beatGain) state.beatGain.gain.setTargetAtTime(beatOn() ? state.beat.vol : 0, state.ctx.currentTime, 0.03);
+    clearTimeout(beatRefreshT);
+    if (!state.node) return;
+    if (!beatOn()) { killBeat(); renderPlayingStatus(); return; }
+    beatRefreshT = setTimeout(() => {
+      const style = state.beat.style;
+      ensureBeat().then((buf) => {
+        if (!state.node || state.beat.style !== style) return;
+        startBeat(buf, state.ctx.currentTime + 0.05);
+        renderPlayingStatus();
+      });
+    }, delay);
+  }
+
+  function setBeat(style) {
+    state.beat.style = style;
+    if (style !== "off") state.beat.last = style;
+    saveBeat();
+    renderBeat();
+    refreshBeat();
+  }
+
+  /** Change the beat pattern. Editing a built-in style turns it into "Custom" (a copy). */
+  function editBeat(mutate) {
+    const b = state.beat;
+    const base = editStyle();
+    if (base !== "custom") {
+      b.custom = window.Beat.clone(window.Beat.STYLES[base]);
+      b.custom.base = base;
+    }
+    mutate(b.custom);
+    b.style = b.last = "custom";
+    saveBeat();
+    renderBeat();
+    refreshBeat(120);
+  }
+
+  function resetBeat() {
+    const base = state.beat.custom?.base || "lofi";
+    state.beat.custom = null;
+    setBeat(base);
+  }
+
+  // ---- beat UI: style chips, volume and the step editor ----
+  const seqCells = {};
+  function buildBeatUI() {
+    const chips = $("beats");
+    BEATS.forEach((b) => {
+      const el = document.createElement("button");
+      el.setAttribute("role", "radio");
+      el.dataset.beat = b;
+      if (b === "custom") el.className = "custom";
+      el.addEventListener("click", () => { ensureCtx(); setBeat(b); });
+      chips.append(el);
+    });
+
+    const seq = $("seq");
+    for (const row of window.Beat.ROWS) {
+      const name = document.createElement("span");
+      name.className = "seq-name";
+      name.dataset.row = row;
+      seq.append(name);
+      seqCells[row] = [];
+      for (let s = 0; s < window.Beat.STEPS; s++) {
+        const c = document.createElement("button");
+        c.type = "button";
+        c.className = "cell" + (s % 4 === 0 ? " beat-start" : "");
+        c.dataset.step = s;
+        c.addEventListener("click", () => {
+          ensureCtx();
+          editBeat((p) => { p.rows[row][s] = ((p.rows[row][s] || 0) + 1) % 3; });
+        });
+        seq.append(c);
+        seqCells[row].push(c);
+      }
+    }
+
+    const slider = (id, key, fmtv) => {
+      $(id).addEventListener("input", (e) => {
+        const v = +e.target.value;
+        $(id + "-val").textContent = fmtv(v);
+        editBeat((p) => { p[key] = v; });
+      });
+    };
+    slider("beat-swing", "swing", (v) => Math.round(v * 100) + " %");
+    slider("beat-tone", "tone", (v) => Math.round(v * 100) + " %");
+    slider("beat-bass", "bassLen", (v) => Math.round(v * 100) + " %");
+    $("beat-reset").addEventListener("click", resetBeat);
+    $("beat-clear").addEventListener("click", () => editBeat((p) => {
+      for (const r of Object.keys(p.rows)) p.rows[r] = p.rows[r].map(() => 0);
+    }));
+  }
+
+  function renderBeat() {
+    if (!window.Beat || !$("seq").children.length) return; // UI not built yet
+    const b = state.beat;
+    [...$("beats").children].forEach((el) => {
+      const s = el.dataset.beat;
+      el.textContent = beatName(s);
+      el.hidden = s === "custom" && !b.custom;
+      el.setAttribute("aria-checked", String(s === b.style));
+    });
+    $("beat-desc").textContent = T("beat_" + b.style + "_desc");
+    $("beat-vol").value = b.vol;
+    $("beat-vol-val").textContent = Math.round(b.vol * 100) + " %";
+    $("beat-vol").disabled = b.style === "off";
+    const btn = $("btn-beat");
+    btn.classList.toggle("on", b.style !== "off");
+    btn.setAttribute("aria-pressed", String(b.style !== "off"));
+
+    // editor shows the pattern that is (or would be) playing
+    const es = editStyle();
+    const p = patternOf(es);
+    $("beat-editing").textContent = beatName(es);
+    $("beat-reset").hidden = es !== "custom";
+    for (const el of $("seq").querySelectorAll(".seq-name")) el.textContent = T("row_" + el.dataset.row);
+    for (const row of window.Beat.ROWS) {
+      seqCells[row].forEach((c, s) => {
+        const v = p.rows[row]?.[s] || 0;
+        c.classList.toggle("v1", v === 1);
+        c.classList.toggle("v2", v === 2);
+        c.setAttribute("aria-label", `${T("row_" + row)} ${s + 1}: ${v ? (row === "bass" ? (v === 2 ? "+8" : "1") : v === 2 ? "!" : "•") : "–"}`);
+      });
+    }
+    for (const [id, key] of [["beat-swing", "swing"], ["beat-tone", "tone"], ["beat-bass", "bassLen"]]) {
+      $(id).value = p[key];
+      $(id + "-val").textContent = Math.round(p[key] * 100) + " %";
+    }
+    // tempo choices depend on the step length of the current sound settings
+    const noteLen = +inputs.noteLen.value;
+    const cur = window.Beat.ratioOf(noteLen, p);
+    $("beat-tempos").replaceChildren(...window.Beat.tempos(noteLen).map((t) => {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.setAttribute("role", "radio");
+      el.textContent = `${t.bpm} BPM`;
+      el.setAttribute("aria-checked", String(Math.abs(t.ratio - cur) < 1e-9));
+      el.addEventListener("click", () => { ensureCtx(); editBeat((q) => { q.ratio = t.ratio; }); });
+      return el;
+    }));
+  }
+
+  // moving playhead in the step editor
+  let seqStep = -1;
+  function updateSeqPlayhead() {
+    let step = -1;
+    if (state.beat.node && state.result && $("beat-editor").open) {
+      const d = window.Beat.sixteenth(state.result.p.noteLen, patternOf(state.beat.style));
+      step = Math.floor((state.ctx.currentTime - state.startedAt) / d) % window.Beat.STEPS;
+    }
+    if (step === seqStep) return;
+    for (const row of window.Beat.ROWS) {
+      if (seqStep >= 0) seqCells[row][seqStep].classList.remove("now");
+      if (step >= 0) seqCells[row][step].classList.add("now");
+    }
+    seqStep = step;
+  }
+
+  function renderPlayingStatus() {
+    if (!state.node || !state.result) return;
+    const dur = state.result.duration;
+    setStatus(() => T("st_playing", { preset: presetName(state.preset), n: state.sources.length, dur: fmt(dur) }) +
+      (beatOn() ? ` · ♫ ${beatName(state.beat.style)} ${window.Beat.bpmOf(state.result.p.noteLen, patternOf(state.beat.style))} BPM` : ""));
+  }
+
   function killNode() {
+    killBeat();
     if (!state.node) return;
     const n = state.node;
     state.node = null;
@@ -654,34 +925,45 @@
     n.disconnect();
   }
 
+  let playToken = 0;
   async function play(offset = state.offset) {
     if (!state.sources.length) return;
+    const tok = ++playToken;
     ensureCtx();
     killNode();
     if (state.dirty || !state.result) {
-      setStatus("Composing…");
+      say("st_composing");
       await new Promise((r) => setTimeout(r, 30));
+      if (tok !== playToken) return;
       compose();
       offset = Math.min(offset, state.result.duration);
+    }
+    let beatBuf = null;
+    if (beatOn()) {
+      if (state.beat.key !== beatKey()) say("st_composing");
+      beatBuf = await ensureBeat();
+      if (tok !== playToken) return;
     }
     const { buffer, duration } = state.result;
     if (offset >= duration - 0.05) offset = 0;
     const node = state.ctx.createBufferSource();
     node.buffer = buffer;
-    node.connect(state.analyser);
+    node.connect(state.musicGain);
     node.onended = () => { if (state.node === node) finish(); };
     state.node = node;
     state.paused = false;
     state.startedAt = state.ctx.currentTime + 0.03 - offset;
     node.start(state.ctx.currentTime + 0.03, offset);
+    startBeat(beatBuf, state.ctx.currentTime + 0.03);
     const vinyl = $("vinyl");
     vinyl.classList.add("spinning");
     vinyl.classList.remove("paused");
-    setStatus(`${PRESETS[state.preset]?.name ?? "Custom"} · ${state.sources.length} image(s) · ${fmt(duration)}`);
+    renderPlayingStatus();
     updateButtons();
   }
 
   function pause() {
+    playToken++;
     if (!state.node) return;
     state.offset = Math.max(0, state.ctx.currentTime - state.startedAt);
     killNode();
@@ -691,6 +973,7 @@
   }
 
   function stop() {
+    playToken++;
     killNode();
     state.paused = false;
     state.offset = 0;
@@ -701,7 +984,7 @@
     updateDeck(0);
   }
 
-  function finish() { stop(); setStatus("Finished – press play to hear it again."); }
+  function finish() { stop(); say("st_finished"); }
 
   function togglePlay() {
     if (state.node) { pause(); return; }
@@ -747,11 +1030,11 @@
     const playing = !!state.node;
     const play = $("btn-play");
     play.textContent = playing ? "❚❚" : "▶";
-    play.setAttribute("aria-label", playing ? "Pause" : "Play");
+    play.setAttribute("aria-label", T(playing ? "pause" : "play"));
     play.classList.toggle("on", playing);
     $("btn-stop").disabled = !(playing || state.paused);
     $("btn-wav").disabled = $("btn-mid").disabled = !(state.result && !state.dirty);
-    $("pp-name").textContent = state.preset >= 0 ? PRESETS[state.preset].name : "Custom";
+    $("pp-name").textContent = presetName(state.preset);
   }
 
   // ------------------------------------------------------------------------ //
@@ -789,13 +1072,13 @@
   function renderThumbs() {
     const multi = state.all.length > 1;
     $("thumbs-bar").hidden = !multi;
-    if (multi) $("thumbs-count").textContent = `${state.sources.length} of ${state.all.length} selected · click a picture to play it`;
+    if (multi) $("thumbs-count").textContent = T("thumbs_count", { a: state.sources.length, b: state.all.length });
     $("thumbs").replaceChildren(...state.all.map((src) => {
       const fig = document.createElement("figure");
       fig.classList.toggle("off", !src.on);
       const img = new Image();
       img.src = src.thumb; img.alt = src.name;
-      img.title = "Play this image";
+      img.title = T("play_this");
       img.addEventListener("click", () => playImage(src));
       fig.append(img);
       if (multi) {
@@ -803,11 +1086,11 @@
         t.type = "button";
         t.className = "pick";
         t.textContent = src.on ? "✓" : "+";
-        t.title = src.on ? "Leave this image out" : "Add this image";
+        t.title = T(src.on ? "leave_out" : "add_this");
         t.setAttribute("aria-pressed", String(src.on));
-        t.setAttribute("aria-label", `${src.on ? "Leave out" : "Add"} ${src.name}`);
+        t.setAttribute("aria-label", `${T(src.on ? "leave_out" : "add_this")}: ${src.name}`);
         t.addEventListener("click", () => {
-          if (src.on && state.sources.length === 1) { setStatus("At least one image has to stay selected.", true); return; }
+          if (src.on && state.sources.length === 1) { say("st_one_left", null, true); return; }
           src.on = !src.on;
           applySelection();
         });
@@ -844,16 +1127,16 @@
   async function loadFiles(fileList) {
     const files = [...fileList].filter((f) => f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|avif|ico)$/i.test(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    if (!files.length) { setStatus("No supported image files.", true); return; }
-    setStatus(`Loading ${files.length} file(s)…`);
+    if (!files.length) { say("st_no_files", null, true); return; }
+    say("st_loading", { n: files.length });
     const out = [], bad = [];
     for (const f of files) {
       try { out.push(await blobToSource(f, f.name)); } catch { bad.push(f.name); }
     }
     setSources(out);
-    setStatus(out.length
-      ? `Loaded ${out.length} image(s). Press play.` + (bad.length ? ` Skipped (unsupported format): ${bad.join(", ")}` : "")
-      : "Your browser can't read these files.", !out.length);
+    setStatus(() => (out.length
+      ? T("st_loaded", { n: out.length }) + (bad.length ? T("st_skipped", { list: bad.join(", ") }) : "")
+      : T("st_cant_read")), !out.length);
   }
 
   // epic.gsfc.nasa.gov does not send CORS headers for images, so pixels can't be read from it directly.
@@ -866,14 +1149,14 @@
       try {
         const r = await fetch(`https://api.nasa.gov/EPIC/archive/${path}?api_key=${encodeURIComponent(key)}`);
         if (r.ok) return await r.blob();
-        if (r.status === 403 && key !== "DEMO_KEY") throw new Error("Invalid NASA API key (403).");
+        if (r.status === 403 && key !== "DEMO_KEY") throw Object.assign(new Error(T("st_bad_key")), { badKey: true });
       } catch (e) {
-        if (/Invalid NASA API key/.test(e.message)) throw e;
+        if (e.badKey) throw e;
       }
       useProxy = true; // rate-limited or unreachable – stay on the proxy for this session
     }
     const r = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(`epic.gsfc.nasa.gov/archive/${path}`)}&w=${MAX_SOURCE_SIDE}`);
-    if (!r.ok) throw new Error(`Image download failed (HTTP ${r.status}). Try again later or use your own API key.`);
+    if (!r.ok) throw new Error(T("st_dl_failed", { s: r.status }));
     return await r.blob();
   }
 
@@ -884,33 +1167,34 @@
     const coll = $("epic-coll").value;
     const n = +$("epic-n").value;
     const key = $("epic-key").value.trim() || "DEMO_KEY";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setStatus("Enter a valid date.", true); return false; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { say("st_bad_date", null, true); return false; }
     loading = true;
     $("btn-epic").disabled = $("btn-earth").disabled = true;
     try {
-      setStatus("Contacting DSCOVR… fetching the EPIC image list");
+      say("st_contacting");
       const res = await fetch(`https://epic.gsfc.nasa.gov/api/${coll}/date/${date}`);
       if (!res.ok) throw new Error(`EPIC API: HTTP ${res.status}`);
       const meta = await res.json();
-      if (!meta.length) { setStatus("No images for this date – try another one.", true); return false; }
+      if (!meta.length) { say("st_no_images", null, true); return false; }
       const k = Math.min(n, meta.length);
       const idx = Array.from({ length: k }, (_, i) => (k === 1 ? 0 : Math.floor((i * (meta.length - 1)) / (k - 1))));
       const [y, m, d] = date.split("-");
       const out = [];
       for (const [i, j] of idx.entries()) {
         const name = meta[j].image;
-        setStatus(`Downloading Earth ${i + 1}/${k}…`);
+        say("st_downloading", { i: i + 1, k });
         const time = (meta[j].date || "").split(" ")[1] || name;
-        out.push(await blobToSource(await fetchEpicImage(coll, y, m, d, name, key), `Earth · ${date} ${time.slice(0, 5)} UTC`));
+        const src = await blobToSource(await fetchEpicImage(coll, y, m, d, name, key), "");
+        liveName(src, () => `${T("earth_name")} · ${date} ${time.slice(0, 5)} UTC`);
+        out.push(src);
       }
       setSources(out);
-      setStatus(`Fetched ${out.length} photo(s) of Earth from ${date}.`);
+      say("st_fetched", { n: out.length, date });
       return true;
     } catch (e) {
       const msg = e.message || String(e);
-      setStatus(/Failed to fetch|NetworkError|Load failed/i.test(msg)
-        ? "Couldn't reach NASA – check your internet connection or turn off an ad/privacy blocker for this page, then try again."
-        : msg, true);
+      if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) say("st_no_net", null, true);
+      else setStatus(msg, true);
       return false;
     } finally {
       loading = false;
@@ -928,15 +1212,21 @@
   // Demo records (NASA GMAO / GPM global maps) and the record magazine
   // ------------------------------------------------------------------------ //
   // Every record is an album of 5 frames (records/<id>/1.webp … 5.webp) that play one after another.
-  const GMAO_HOURS = ["05:00", "06:00", "07:00", "08:00", "09:00"].map((h) => `${h} EDT`); // 29 Oct 2026
+  const GMAO_DAY = new Date(Date.UTC(2026, 9, 29));
+  const GMAO_HOURS = ["05:00", "06:00", "07:00", "08:00", "09:00"].map((h) => () => `${h} EDT`);
+  const JULY = [1, 2, 3, 4, 5].map((d) => new Date(Date.UTC(2024, 6, d)));
+  const record = (id, org, preset, frames, when) => ({
+    id, preset, frames,
+    get title() { return T("r_" + id); },
+    get sub() { return `${org} · ${T("rs_" + id)} · ${when()}`; },
+  });
   const RECORDS = [
-    { id: "clouds", title: "Clouds & Rain", sub: "NASA GMAO · precipitation and clouds · 29 Oct 2026", preset: "Classic", frames: GMAO_HOURS },
-    { id: "winds", title: "Surface Winds", sub: "NASA GMAO · near-surface wind speed · 29 Oct 2026", preset: "Ambient", frames: GMAO_HOURS },
-    { id: "co", title: "Carbon Monoxide", sub: "NASA GMAO · carbon monoxide in the air · 29 Oct 2026", preset: "Dark", frames: GMAO_HOURS },
-    { id: "rain", title: "Rain Anomaly", sub: "NASA GPM IMERG · precipitation anomaly · 1–5 Jul 2024", preset: "Music box",
-      frames: ["01", "02", "03", "04", "05"].map((d) => `${+d} Jul 2024`) },
-    { id: "temp", title: "Surface Temperature", sub: "NASA GMAO · near-surface air temperature · 29 Oct 2026", preset: "Dreamy", frames: GMAO_HOURS },
-    { id: "ozone", title: "Surface Ozone", sub: "NASA GMAO · near-surface ozone · 29 Oct 2026", preset: "Mystery", frames: GMAO_HOURS },
+    record("clouds", "NASA GMAO", "Classic", GMAO_HOURS, () => I18N.date(GMAO_DAY)),
+    record("winds", "NASA GMAO", "Ambient", GMAO_HOURS, () => I18N.date(GMAO_DAY)),
+    record("co", "NASA GMAO", "Dark", GMAO_HOURS, () => I18N.date(GMAO_DAY)),
+    record("rain", "NASA GPM IMERG", "Music box", JULY.map((d) => () => I18N.date(d)), () => I18N.dateRange(JULY[0], JULY[4])),
+    record("temp", "NASA GMAO", "Dreamy", GMAO_HOURS, () => I18N.date(GMAO_DAY)),
+    record("ozone", "NASA GMAO", "Mystery", GMAO_HOURS, () => I18N.date(GMAO_DAY)),
   ];
   const SLOTS = [0, 4, 8, 12, 16, 20]; // where the labelled records sit in the 24-slot magazine
   state.record = -1;
@@ -949,7 +1239,7 @@
     embedded ||= new Promise((res, rej) => {
       const s = Object.assign(document.createElement("script"), { src: "records/embedded.js" });
       s.onload = () => res(window.JUKEBOX_RECORDS || {});
-      s.onerror = () => rej(new Error("Couldn't load the demo records from disk."));
+      s.onerror = () => rej(new Error(T("st_rec_disk")));
       document.head.append(s);
     });
     return embedded.then((m) => m[path]);
@@ -960,8 +1250,9 @@
     if (!recCache.has(r.id)) {
       const p = Promise.all(r.frames.map((when, k) => recordUrl(`${r.id}/${k + 1}`)
         .then((url) => fetch(url))
-        .then((res) => { if (!res.ok) throw new Error(`Couldn't load record (HTTP ${res.status}).`); return res.blob(); })
-        .then((b) => blobToSource(b, `${r.title} · ${when}`))));
+        .then((res) => { if (!res.ok) throw new Error(T("st_rec_failed", { s: res.status })); return res.blob(); })
+        .then((b) => blobToSource(b, ""))
+        .then((src) => liveName(src, () => `${r.title} · ${when()}`))));
       p.catch(() => recCache.delete(r.id));
       recCache.set(r.id, p);
     }
@@ -971,7 +1262,7 @@
   const labelImgs = RECORDS.map((r) => Object.assign(new Image(), { src: `records/${r.id}-label.webp` }));
   const carousel = window.Carousel
     ? new window.Carousel($("carousel"), {
-        slots: RECORDS.map((r, i) => ({ slot: SLOTS[i], label: labelImgs[i], title: r.title })),
+        slots: RECORDS.map((r, i) => ({ slot: SLOTS[i], label: labelImgs[i], get title() { return r.title; } })),
         onPick: (i) => pickRecord(i),
       })
     : null;
@@ -1003,12 +1294,12 @@
     const pi = PRESETS.findIndex((p) => p.name === r.preset);
     if (pi >= 0) applyPreset(pi);
     $("vinyl").classList.remove("loaded", "spinning"); // the old record goes back
-    setStatus(`Picking “${r.title}”…`);
+    say("st_picking", () => ({ t: r.title }));
     try {
       const [album] = await Promise.all([loadRecord(r), carousel ? carousel.select(i) : null]);
       if (token !== pickToken) return;
       setSources(album, true);
-      setStatus(`${r.title} – ${r.sub}`);
+      say("st_record", () => ({ t: r.title, sub: r.sub }));
       if (autoplay) play(0);
     } catch (e) {
       if (token === pickToken) setStatus(e.message || String(e), true);
@@ -1068,9 +1359,61 @@
       togglePlay();
     }
   });
-  $("btn-wav").addEventListener("click", () => state.result && download(wavBlob(state.result.L, state.result.R), "jukebox.wav"));
+  $("btn-wav").addEventListener("click", async () => {
+    if (!state.result) return;
+    let { L, R } = state.result;
+    const bb = beatOn() ? await ensureBeat() : null;
+    if (bb) { // melody + beat, re-normalised
+      L = Float32Array.from(L); R = Float32Array.from(R);
+      const bl = bb.getChannelData(0), br = bb.getChannelData(1), v = state.beat.vol, m = state.musicVol;
+      for (let i = 0; i < L.length; i++) {
+        L[i] = m * L[i] + (i < bl.length ? v * bl[i] : 0);
+        R[i] = m * R[i] + (i < br.length ? v * br[i] : 0);
+      }
+      normalize(L, R);
+    }
+    download(wavBlob(L, R), "jukebox.wav");
+  });
   $("btn-mid").addEventListener("click", () => state.result && download(midiBlob(state.result.matrices, state.result.midi, state.result.p), "jukebox.mid"));
   window.addEventListener("resize", () => paintViz(-1));
+
+  // main music volume (the image melody) – live, remembered
+  const showMusicVol = () => ($("music-vol-val").textContent = Math.round(state.musicVol * 100) + " %");
+  $("music-vol").value = state.musicVol;
+  showMusicVol();
+  $("music-vol").addEventListener("input", (e) => {
+    state.musicVol = +e.target.value;
+    showMusicVol();
+    if (state.musicGain) state.musicGain.gain.setTargetAtTime(state.musicVol, state.ctx.currentTime, 0.03);
+    try { localStorage.setItem("jukebox.musicVol", String(state.musicVol)); } catch {}
+  });
+
+  // backing beat controls
+  if (window.Beat) buildBeatUI();
+  renderBeat();
+  $("btn-beat").addEventListener("click", () => { ensureCtx(); setBeat(state.beat.style === "off" ? state.beat.last : "off"); });
+  $("beat-vol").addEventListener("input", (e) => {
+    state.beat.vol = +e.target.value;
+    $("beat-vol-val").textContent = Math.round(state.beat.vol * 100) + " %";
+    if (state.beatGain && beatOn()) state.beatGain.gain.setTargetAtTime(state.beat.vol, state.ctx.currentTime, 0.03);
+    saveBeat();
+  });
+
+  // language switcher
+  document.querySelectorAll("[data-lang]").forEach((b) => b.addEventListener("click", () => I18N.setLang(b.dataset.lang)));
+  I18N.onChange(() => {
+    relabelParams();
+    renderHelp();
+    renderPresetNames();
+    renderPresetState();
+    renderBeat();
+    $("records").replaceChildren();
+    renderRecords();
+    renderThumbs();
+    updateButtons();
+    updateDeck(currentTime());
+    renderStatus();
+  });
   paintViz(-1);
   updateButtons();
   renderRecords();
@@ -1079,6 +1422,7 @@
   (function loop() {
     updateAudio();
     if (carousel) carousel.playing = !!state.node;
+    if (window.Beat) updateSeqPlayhead();
     if (state.node) updateDeck(currentTime());
     requestAnimationFrame(loop);
   })();

@@ -9,9 +9,11 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Audiowide has no Cyrillic – Russo One fills in Ukrainian letters in the same techno style -->
+  <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Russo+One&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="preload" as="image" href="jukebox.webp">
   <link rel="stylesheet" href="style.css">
+  <script src="i18n.js"></script>
 </head>
 <body>
   <!-- tło: gwiazdy + cząsteczki reagujące na muzykę -->
@@ -21,15 +23,22 @@
   <section class="hero">
     <header class="topbar">
       <h1>JukeBox</h1>
-      <a class="settings-link" href="#images">Settings ↓</a>
+      <div class="top-right">
+        <div class="lang" role="group" data-i18n-attr="aria-label:lang_label">
+          <button type="button" data-lang="en" title="English" lang="en">EN</button>
+          <button type="button" data-lang="pl" title="Polski" lang="pl">PL</button>
+          <button type="button" data-lang="uk" title="Українська" lang="uk">UA</button>
+        </div>
+        <a class="settings-link" href="#images" data-i18n="settings">Settings ↓</a>
+      </div>
     </header>
 
     <div class="stage-box">
       <div id="stage" class="stage">
         <div id="glow" class="glow"></div>
         <img src="jukebox.webp" alt="JukeBox" width="1440" height="1030" draggable="false">
-        <canvas id="carousel" class="carousel" aria-label="Record magazine – click a labelled record to play it"></canvas>
-        <div id="vinyl" class="vinyl" title="Click to play / pause">
+        <canvas id="carousel" class="carousel" data-i18n-attr="aria-label:carousel"></canvas>
+        <div id="vinyl" class="vinyl" data-i18n-attr="title:vinyl">
           <div class="grooves"></div>
           <div id="label" class="label"></div>
           <div class="hole"></div>
@@ -38,23 +47,24 @@
         <!-- główne kontrolki na złotym panelu -->
         <div class="deck" id="deck">
           <div class="deck-top">
-            <span class="np-tag">Now playing</span>
-            <span id="np-title" class="np-title">Pick a record</span>
+            <span class="np-tag" data-i18n="np_tag">Now playing</span>
+            <span id="np-title" class="np-title" data-i18n="np_pick">Pick a record</span>
             <span id="np-time" class="np-time">0:00 / 0:00</span>
           </div>
-          <div id="progress" class="progress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+          <div id="progress" class="progress" role="slider" data-i18n-attr="aria-label:seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
             <div id="progress-fill" class="progress-fill"></div>
           </div>
           <div class="deck-row">
             <div class="preset-pick">
-              <button id="pp-prev" class="knob" aria-label="Previous preset">◀</button>
+              <button id="pp-prev" class="knob" data-i18n-attr="aria-label:prev_preset">◀</button>
               <span id="pp-name" class="pp-name">Classic</span>
-              <button id="pp-next" class="knob" aria-label="Next preset">▶</button>
+              <button id="pp-next" class="knob" data-i18n-attr="aria-label:next_preset">▶</button>
             </div>
             <div class="transport">
-              <button id="btn-stop" class="knob" aria-label="Stop" disabled>■</button>
+              <button id="btn-stop" class="knob" data-i18n-attr="aria-label:stop" disabled>■</button>
               <button id="btn-play" class="knob big" aria-label="Play">▶</button>
-              <button id="btn-earth" class="knob" aria-label="Fetch new Earth photos" title="Fetch Earth photos (NASA EPIC)">🌍</button>
+              <button id="btn-beat" class="knob" data-i18n-attr="aria-label:beat_btn;title:beat_btn" aria-pressed="false"><svg class="ico-drum" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="9" rx="8" ry="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9v6.5c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7.5 12.2l3 6M16.5 12.2l-3 6" stroke="currentColor" stroke-width="1.4"/><path d="M14 2.5l5.5 5M10 2.5L4.5 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+              <button id="btn-earth" class="knob" data-i18n-attr="aria-label:earth;title:earth_title">🌍</button>
             </div>
             <div class="exports">
               <button id="btn-wav" class="tag" disabled>WAV</button>
@@ -65,103 +75,136 @@
       </div>
     </div>
 
-    <nav class="records" id="records" aria-label="Choose a record"></nav>
+    <nav class="records" id="records" data-i18n-attr="aria-label:records_nav"></nav>
 
-    <p id="status" class="status" role="status">Pick a record and press play – or load your own images below.</p>
+    <p id="status" class="status" role="status"></p>
   </section>
 
   <main>
     <section class="panel" id="images">
-      <h2>Images</h2>
+      <h2 data-i18n="images_h">Images</h2>
       <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="epic">NASA EPIC</button>
-        <button role="tab" aria-selected="false" data-tab="files">Your files</button>
+        <button role="tab" aria-selected="true" data-tab="epic" data-i18n="tab_epic">NASA EPIC</button>
+        <button role="tab" aria-selected="false" data-tab="files" data-i18n="tab_files">Your files</button>
       </div>
 
       <div class="tab" id="tab-epic">
-        <p class="hint">Photos of the whole sunlit Earth taken by the EPIC camera on the DSCOVR satellite, 1.5 million km away.</p>
+        <p class="hint" data-i18n="epic_hint"></p>
         <div class="grid">
-          <label>Date <input type="date" id="epic-date" value="2022-08-30" min="2015-06-13"></label>
-          <label>Collection
+          <label><span data-i18n="date">Date</span> <input type="date" id="epic-date" value="2022-08-30" min="2015-06-13"></label>
+          <label><span data-i18n="collection">Collection</span>
             <select id="epic-coll">
               <option value="enhanced" selected>enhanced</option>
               <option value="natural">natural</option>
             </select>
           </label>
-          <label><span class="row">Frames <span class="val" id="epic-n-val">4</span></span>
+          <label><span class="row"><span data-i18n="frames">Frames</span> <span class="val" id="epic-n-val">4</span></span>
             <input type="range" id="epic-n" min="1" max="12" step="1" value="4">
           </label>
-          <label>NASA API key <input type="text" id="epic-key" value="DEMO_KEY" spellcheck="false" autocomplete="off"></label>
+          <label><span data-i18n="api_key">NASA API key</span> <input type="text" id="epic-key" value="DEMO_KEY" spellcheck="false" autocomplete="off"></label>
         </div>
-        <p class="hint">DEMO_KEY is limited to a few downloads per hour (a backup source kicks in after that). For more, get a free key at
-          <a href="https://api.nasa.gov/" target="_blank" rel="noopener">api.nasa.gov</a>.</p>
-        <button id="btn-epic">Fetch EPIC frames</button>
+        <p class="hint" data-i18n-html="key_hint"></p>
+        <button id="btn-epic" data-i18n="fetch_epic">Fetch EPIC frames</button>
       </div>
 
       <div class="tab" id="tab-files" hidden>
         <label class="drop" id="drop">
           <input type="file" id="file-input" accept="image/*" multiple>
-          <span>Click or drop images here (JPG, PNG, WebP, GIF, BMP, AVIF…).<br>
-            Files play in alphabetical order.</span>
+          <span data-i18n-html="drop"></span>
         </label>
       </div>
 
       <div class="thumbs-bar" id="thumbs-bar" hidden>
         <span id="thumbs-count"></span>
         <span class="thumbs-actions">
-          <button id="sel-all" class="small" type="button">Select all</button>
-          <button id="sel-one" class="small" type="button">Only the first</button>
+          <button id="sel-all" class="small" type="button" data-i18n="sel_all">Select all</button>
+          <button id="sel-one" class="small" type="button" data-i18n="sel_one">Only the first</button>
         </span>
       </div>
       <div id="thumbs" class="thumbs"></div>
     </section>
 
     <section class="panel">
-      <h2>Sound</h2>
-      <div class="presets" id="presets" role="radiogroup" aria-label="Presets"></div>
+      <h2 data-i18n="sound_h">Sound</h2>
+      <label class="music-vol"><span class="row"><span data-i18n="music_vol">Music volume</span> <span class="val" id="music-vol-val"></span></span>
+        <input type="range" id="music-vol" min="0" max="1" step="0.05" value="1">
+      </label>
+      <div class="presets" id="presets" role="radiogroup" data-i18n-attr="aria-label:presets_aria"></div>
       <p class="hint" id="preset-desc"></p>
+
+      <div class="beat-box">
+        <h3><span data-i18n="beat_h">Backing beat</span></h3>
+        <p class="hint" data-i18n="beat_hint"></p>
+        <div class="presets" id="beats" role="radiogroup" data-i18n-attr="aria-label:beat_h"></div>
+        <p class="hint" id="beat-desc"></p>
+        <label class="beat-vol"><span class="row"><span data-i18n="beat_vol">Beat volume</span> <span class="val" id="beat-vol-val"></span></span>
+          <input type="range" id="beat-vol" min="0" max="1" step="0.05" value="0.5">
+        </label>
+
+        <details id="beat-editor" class="beat-editor">
+          <summary><span data-i18n="beat_edit">Edit beat</span> · <span id="beat-editing" class="beat-editing"></span></summary>
+          <p class="hint" data-i18n="beat_grid_hint"></p>
+          <div class="seq-wrap"><div class="seq" id="seq"></div></div>
+          <div class="seq-tempo">
+            <span class="seq-label" data-i18n="beat_tempo">Tempo</span>
+            <div class="presets" id="beat-tempos" role="radiogroup" data-i18n-attr="aria-label:beat_tempo"></div>
+          </div>
+          <div class="grid seq-sliders">
+            <label><span class="row"><span data-i18n="beat_swing">Swing</span> <span class="val" id="beat-swing-val"></span></span>
+              <input type="range" id="beat-swing" min="0" max="0.3" step="0.01"></label>
+            <label><span class="row"><span data-i18n="beat_tone">Brightness</span> <span class="val" id="beat-tone-val"></span></span>
+              <input type="range" id="beat-tone" min="0" max="1" step="0.05"></label>
+            <label><span class="row"><span data-i18n="beat_bass_len">Bass note length</span> <span class="val" id="beat-bass-val"></span></span>
+              <input type="range" id="beat-bass" min="0.15" max="1" step="0.05"></label>
+          </div>
+          <div class="adv-actions">
+            <button id="beat-reset" class="small" type="button" data-i18n="beat_reset">Reset to style</button>
+            <button id="beat-clear" class="small" type="button" data-i18n="beat_clear">Clear</button>
+          </div>
+        </details>
+      </div>
+
       <details id="advanced">
-        <summary>Advanced settings</summary>
-        <p class="hint adv-hint">Not sure what something does? Press <b>?</b> next to any option, or open the full guide.</p>
+        <summary data-i18n="adv_summary">Advanced settings</summary>
+        <p class="hint adv-hint" data-i18n-html="adv_hint"></p>
         <div id="params"></div>
         <div class="adv-actions">
-          <button id="btn-reset" class="small">Reset to preset</button>
-          <button id="btn-help" class="small" type="button">? How it works</button>
+          <button id="btn-reset" class="small" data-i18n="reset">Reset to preset</button>
+          <button id="btn-help" class="small" type="button" data-i18n="how">? How it works</button>
         </div>
       </details>
     </section>
 
     <section class="panel">
-      <h2>Score</h2>
+      <h2 data-i18n="score_h">Score</h2>
       <canvas id="viz"></canvas>
-      <p class="hint">What gets played: each column is one time step (left to right), higher rows are higher notes, brighter cells are louder. Dimmed cells fall below the threshold and stay silent.</p>
+      <p class="hint" data-i18n="score_hint"></p>
     </section>
   </main>
 
   <dialog id="help" class="help" aria-labelledby="help-title">
     <div class="help-head">
-      <h3 id="help-title">How JukeBox works</h3>
-      <button id="help-close" class="help-x" type="button" aria-label="Close">✕</button>
+      <h3 id="help-title" data-i18n="help_title">How JukeBox works</h3>
+      <button id="help-close" class="help-x" type="button" data-i18n-attr="aria-label:close">✕</button>
     </div>
     <div class="help-body" id="help-body">
-      <p>JukeBox reads a picture like a music score. It moves through the image <b>from left to right</b> – each slice is one beat.
-        <b>Higher up</b> in the picture means a <b>higher note</b>, and <b>brighter</b> pixels play <b>louder</b>.
-        Several images play one after another.</p>
-      <p>The presets are ready-made combinations of the settings below. Change any of them and the preset becomes “Custom”;
-        <i>Reset to preset</i> brings the original values back.</p>
+      <p data-i18n-html="help_p1"></p>
+      <p data-i18n-html="help_p2"></p>
+      <div id="help-list"></div>
     </div>
   </dialog>
 
   <footer>
-    <p class="authors"><span>Authors</span>
+    <p class="authors"><span data-i18n="authors">Authors</span>
       Zofia Modelska · Oleksandra Simeonidi · Aleksandra Mazurek · Tomasz Jarko</p>
-    Images: <a href="https://epic.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA EPIC / DSCOVR</a>,
+    <span data-i18n="footer_images">Images:</span> <a href="https://epic.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA EPIC / DSCOVR</a>,
     <a href="https://gmao.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA GMAO</a>,
-    <a href="https://gpm.nasa.gov/" target="_blank" rel="noopener">NASA GPM</a> ·
-    <a href="../">Tomson601</a>
+    <a href="https://gpm.nasa.gov/" target="_blank" rel="noopener">NASA GPM</a>
   </footer>
 
+  <script>I18N.apply();</script>
   <script src="carousel.js"></script>
+  <script src="beat.js"></script>
   <script src="app.js"></script>
   <script src="space.js"></script>
 </body>
