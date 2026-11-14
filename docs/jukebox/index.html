@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kosmiczny Jukebox</title>
+  <meta name="description" content="Zamiana zdjęć NASA (EPIC) i własnych obrazów na muzykę – sonifikacja w przeglądarce.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Kosmiczny Jukebox</h1>
+    <p class="lead">Zdjęcia Ziemi z satelity DSCOVR (NASA EPIC) albo Twoje własne obrazy zamienione na muzykę.
+      Oś <b>X</b> to czas, oś <b>Y</b> to wysokość dźwięku, a <b>jasność</b> piksela to głośność.</p>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div id="viewer" aria-label="Model 3D szafy grającej">
+        <p id="viewer-msg">Ładowanie modelu…</p>
+      </div>
+      <div class="transport">
+        <button id="btn-play" class="primary" disabled>▶ Generuj i graj</button>
+        <button id="btn-stop" disabled>■ Stop</button>
+        <button id="btn-wav" disabled>⬇ WAV</button>
+        <button id="btn-mid" disabled>⬇ MIDI</button>
+      </div>
+      <p id="status" role="status">Wybierz źródło obrazów poniżej.</p>
+    </section>
+
+    <section class="panel">
+      <h2>1. Źródło obrazów</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="epic">NASA EPIC</button>
+        <button role="tab" aria-selected="false" data-tab="files">Własne pliki</button>
+      </div>
+
+      <div class="tab" id="tab-epic">
+        <div class="grid">
+          <label>Data <input type="date" id="epic-date" value="2022-08-30" min="2015-06-13"></label>
+          <label>Kolekcja
+            <select id="epic-coll">
+              <option value="enhanced" selected>enhanced</option>
+              <option value="natural">natural</option>
+            </select>
+          </label>
+          <label>Liczba klatek <span class="val" id="epic-n-val">4</span>
+            <input type="range" id="epic-n" min="1" max="12" step="1" value="4">
+          </label>
+          <label>Klucz API NASA <input type="text" id="epic-key" value="DEMO_KEY" spellcheck="false" autocomplete="off"></label>
+        </div>
+        <p class="hint">DEMO_KEY ma limit ok. 30 zapytań na godzinę. Darmowy własny klucz dostaniesz na
+          <a href="https://api.nasa.gov/" target="_blank" rel="noopener">api.nasa.gov</a>.</p>
+        <button id="btn-epic">Pobierz klatki z EPIC</button>
+      </div>
+
+      <div class="tab" id="tab-files" hidden>
+        <label class="drop" id="drop">
+          <input type="file" id="file-input" accept="image/*" multiple>
+          <span>Kliknij albo upuść tutaj obrazy (JPG, PNG, WebP, GIF, BMP, AVIF…).<br>
+            Kolejność alfabetyczna = kolejność w utworze.</span>
+        </label>
+      </div>
+
+      <div id="thumbs" class="thumbs"></div>
+    </section>
+
+    <section class="panel">
+      <h2>2. Parametry</h2>
+      <div class="grid" id="params"></div>
+    </section>
+
+    <section class="panel">
+      <h2>3. Co zostanie zagrane</h2>
+      <canvas id="viz" height="240"></canvas>
+      <p class="hint">Każda kolumna to jeden krok w czasie (od lewej do prawej), wyższe wiersze to wyższe dźwięki.</p>
+    </section>
+  </main>
+
+  <footer>
+    Zdjęcia: <a href="https://epic.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA EPIC / DSCOVR</a> ·
+    <a href="../">Tomson601</a>
+  </footer>
+
+  <script src="app.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
