@@ -1,97 +1,168 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kosmiczny Jukebox</title>
-  <meta name="description" content="Zamiana zdjęć NASA (EPIC) i własnych obrazów na muzykę – sonifikacja w przeglądarce.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>JukeBox</title>
+  <meta name="description" content="Turn NASA EPIC photos of Earth, or your own images, into music – image sonification in the browser.">
+  <meta name="theme-color" content="#04030c">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="jukebox.webp">
   <link rel="stylesheet" href="style.css">
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
 </head>
 <body>
-  <header>
-    <h1>Kosmiczny Jukebox</h1>
-    <p class="lead">Zdjęcia Ziemi z satelity DSCOVR (NASA EPIC) albo Twoje własne obrazy zamienione na muzykę.
-      Oś <b>X</b> to czas, oś <b>Y</b> to wysokość dźwięku, a <b>jasność</b> piksela to głośność.</p>
-  </header>
+  <!-- tło: gwiazdy + cząsteczki reagujące na muzykę -->
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <canvas id="space" aria-hidden="true"></canvas>
+
+  <section class="hero">
+    <header class="topbar">
+      <h1>JukeBox</h1>
+      <a class="settings-link" href="#images">Settings ↓</a>
+    </header>
+
+    <div class="stage-box">
+      <div id="stage" class="stage">
+        <div id="glow" class="glow"></div>
+        <img src="jukebox.webp" alt="JukeBox" width="1440" height="1030" draggable="false">
+        <canvas id="carousel" class="carousel" aria-label="Record magazine – click a labelled record to play it"></canvas>
+        <div id="vinyl" class="vinyl" title="Click to play / pause">
+          <div class="grooves"></div>
+          <div id="label" class="label"></div>
+          <div class="hole"></div>
+        </div>
+
+        <!-- główne kontrolki na złotym panelu -->
+        <div class="deck" id="deck">
+          <div class="deck-top">
+            <span class="np-tag">Now playing</span>
+            <span id="np-title" class="np-title">Pick a record</span>
+            <span id="np-time" class="np-time">0:00 / 0:00</span>
+          </div>
+          <div id="progress" class="progress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <div class="deck-row">
+            <div class="preset-pick">
+              <button id="pp-prev" class="knob" aria-label="Previous preset">◀</button>
+              <span id="pp-name" class="pp-name">Classic</span>
+              <button id="pp-next" class="knob" aria-label="Next preset">▶</button>
+            </div>
+            <div class="transport">
+              <button id="btn-stop" class="knob" aria-label="Stop" disabled>■</button>
+              <button id="btn-play" class="knob big" aria-label="Play">▶</button>
+              <button id="btn-earth" class="knob" aria-label="Fetch new Earth photos" title="Fetch Earth photos (NASA EPIC)">🌍</button>
+            </div>
+            <div class="exports">
+              <button id="btn-wav" class="tag" disabled>WAV</button>
+              <button id="btn-mid" class="tag" disabled>MIDI</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="records" id="records" aria-label="Choose a record"></nav>
+
+    <p id="status" class="status" role="status">Pick a record and press play – or load your own images below.</p>
+  </section>
 
   <main>
-    <section class="stage">
-      <div id="viewer" aria-label="Model 3D szafy grającej">
-        <p id="viewer-msg">Ładowanie modelu…</p>
-      </div>
-      <div class="transport">
-        <button id="btn-play" class="primary" disabled>▶ Generuj i graj</button>
-        <button id="btn-stop" disabled>■ Stop</button>
-        <button id="btn-wav" disabled>⬇ WAV</button>
-        <button id="btn-mid" disabled>⬇ MIDI</button>
-      </div>
-      <p id="status" role="status">Wybierz źródło obrazów poniżej.</p>
-    </section>
-
-    <section class="panel">
-      <h2>1. Źródło obrazów</h2>
+    <section class="panel" id="images">
+      <h2>Images</h2>
       <div class="tabs" role="tablist">
         <button role="tab" aria-selected="true" data-tab="epic">NASA EPIC</button>
-        <button role="tab" aria-selected="false" data-tab="files">Własne pliki</button>
+        <button role="tab" aria-selected="false" data-tab="files">Your files</button>
       </div>
 
       <div class="tab" id="tab-epic">
+        <p class="hint">Photos of the whole sunlit Earth taken by the EPIC camera on the DSCOVR satellite, 1.5 million km away.</p>
         <div class="grid">
-          <label>Data <input type="date" id="epic-date" value="2022-08-30" min="2015-06-13"></label>
-          <label>Kolekcja
+          <label>Date <input type="date" id="epic-date" value="2022-08-30" min="2015-06-13"></label>
+          <label>Collection
             <select id="epic-coll">
               <option value="enhanced" selected>enhanced</option>
               <option value="natural">natural</option>
             </select>
           </label>
-          <label>Liczba klatek <span class="val" id="epic-n-val">4</span>
+          <label><span class="row">Frames <span class="val" id="epic-n-val">4</span></span>
             <input type="range" id="epic-n" min="1" max="12" step="1" value="4">
           </label>
-          <label>Klucz API NASA <input type="text" id="epic-key" value="DEMO_KEY" spellcheck="false" autocomplete="off"></label>
+          <label>NASA API key <input type="text" id="epic-key" value="DEMO_KEY" spellcheck="false" autocomplete="off"></label>
         </div>
-        <p class="hint">DEMO_KEY ma limit ok. 30 zapytań na godzinę. Darmowy własny klucz dostaniesz na
+        <p class="hint">DEMO_KEY is limited to a few downloads per hour (a backup source kicks in after that). For more, get a free key at
           <a href="https://api.nasa.gov/" target="_blank" rel="noopener">api.nasa.gov</a>.</p>
-        <button id="btn-epic">Pobierz klatki z EPIC</button>
+        <button id="btn-epic">Fetch EPIC frames</button>
       </div>
 
       <div class="tab" id="tab-files" hidden>
         <label class="drop" id="drop">
           <input type="file" id="file-input" accept="image/*" multiple>
-          <span>Kliknij albo upuść tutaj obrazy (JPG, PNG, WebP, GIF, BMP, AVIF…).<br>
-            Kolejność alfabetyczna = kolejność w utworze.</span>
+          <span>Click or drop images here (JPG, PNG, WebP, GIF, BMP, AVIF…).<br>
+            Files play in alphabetical order.</span>
         </label>
       </div>
 
+      <div class="thumbs-bar" id="thumbs-bar" hidden>
+        <span id="thumbs-count"></span>
+        <span class="thumbs-actions">
+          <button id="sel-all" class="small" type="button">Select all</button>
+          <button id="sel-one" class="small" type="button">Only the first</button>
+        </span>
+      </div>
       <div id="thumbs" class="thumbs"></div>
     </section>
 
     <section class="panel">
-      <h2>2. Parametry</h2>
-      <div class="grid" id="params"></div>
+      <h2>Sound</h2>
+      <div class="presets" id="presets" role="radiogroup" aria-label="Presets"></div>
+      <p class="hint" id="preset-desc"></p>
+      <details id="advanced">
+        <summary>Advanced settings</summary>
+        <p class="hint adv-hint">Not sure what something does? Press <b>?</b> next to any option, or open the full guide.</p>
+        <div id="params"></div>
+        <div class="adv-actions">
+          <button id="btn-reset" class="small">Reset to preset</button>
+          <button id="btn-help" class="small" type="button">? How it works</button>
+        </div>
+      </details>
     </section>
 
     <section class="panel">
-      <h2>3. Co zostanie zagrane</h2>
-      <canvas id="viz" height="240"></canvas>
-      <p class="hint">Każda kolumna to jeden krok w czasie (od lewej do prawej), wyższe wiersze to wyższe dźwięki.</p>
+      <h2>Score</h2>
+      <canvas id="viz"></canvas>
+      <p class="hint">What gets played: each column is one time step (left to right), higher rows are higher notes, brighter cells are louder. Dimmed cells fall below the threshold and stay silent.</p>
     </section>
   </main>
 
+  <dialog id="help" class="help" aria-labelledby="help-title">
+    <div class="help-head">
+      <h3 id="help-title">How JukeBox works</h3>
+      <button id="help-close" class="help-x" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="help-body" id="help-body">
+      <p>JukeBox reads a picture like a music score. It moves through the image <b>from left to right</b> – each slice is one beat.
+        <b>Higher up</b> in the picture means a <b>higher note</b>, and <b>brighter</b> pixels play <b>louder</b>.
+        Several images play one after another.</p>
+      <p>The presets are ready-made combinations of the settings below. Change any of them and the preset becomes “Custom”;
+        <i>Reset to preset</i> brings the original values back.</p>
+    </div>
+  </dialog>
+
   <footer>
-    Zdjęcia: <a href="https://epic.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA EPIC / DSCOVR</a> ·
+    <p class="authors"><span>Authors</span>
+      Zofia Modelska · Oleksandra Simeonidi · Aleksandra Mazurek · Tomasz Jarko</p>
+    Images: <a href="https://epic.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA EPIC / DSCOVR</a>,
+    <a href="https://gmao.gsfc.nasa.gov/" target="_blank" rel="noopener">NASA GMAO</a>,
+    <a href="https://gpm.nasa.gov/" target="_blank" rel="noopener">NASA GPM</a> ·
     <a href="../">Tomson601</a>
   </footer>
 
+  <script src="carousel.js"></script>
   <script src="app.js"></script>
-  <script type="module" src="viewer.js"></script>
+  <script src="space.js"></script>
 </body>
 </html>
