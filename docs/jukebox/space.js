@@ -24,11 +24,8 @@
     }
   }
 
-  const canvas = document.getElementById("space");
-  const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false });
   drawStars();
   addEventListener("resize", drawStars);
-  if (!gl) return; // no WebGL2 → stars + CSS nebula only
 
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const small = Math.min(innerWidth, innerHeight) < 700;
@@ -45,6 +42,10 @@
     { y: -0.46, tilt:  0.06, col: [1.00, 0.62, 0.55] }, // rose     – bass
   ];
 
+  /** A nebula renderer on its own WebGL2 canvas – used live (#space) and by the video export. */
+  function createNebula(canvas, N) {
+  const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: false });
+  if (!gl) return null;
   const NOISE = `
     vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
     vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
@@ -148,7 +149,7 @@
   }
 
   let prog;
-  try { prog = program(VS, FS); } catch (e) { console.warn("Nebula shaders failed:", e); return; }
+  try { prog = program(VS, FS); } catch (e) { console.warn("Nebula shaders failed:", e); return null; }
 
   // particle seeds
   const gauss = () => { // Box–Muller
@@ -177,6 +178,48 @@
   gl.uniform1fv(U.uTilt, RIBBONS.map((r) => r.tilt));
   gl.uniform3fv(U.uCol, RIBBONS.flatMap((r) => r.col));
 
+  return {
+    canvas, gl,
+    clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); },
+    /** t: seconds, energy: Float32Array(NR), centre (cx, cy) and unit sizes (sx, sy) in canvas pixels */
+    draw({ t, energy, cx, cy, sx, sy, dpr }) {
+      const W = canvas.width, H = canvas.height;
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE); // additive glow
+      gl.useProgram(prog);
+      gl.bindVertexArray(vao);
+      gl.uniform1f(U.uTime, t);
+      gl.uniform1f(U.uDpr, dpr);
+      gl.uniform1fv(U.uEnergy, energy);
+      gl.uniform2f(U.uCenter, cx, cy);
+      gl.uniform2f(U.uView, W, H);
+      gl.uniform2f(U.uScale, sx, sy);
+      gl.drawArrays(gl.POINTS, 0, N);
+    },
+  };
+  }
+
+  // ribbon energy: ribbon 0 (top) = treble … ribbon NR-1 (bottom) = bass; smooth & soft
+  function stepEnergy(energy, bands, dt, react) {
+    for (let r = 0; r < NR; r++) {
+      const lo = Math.floor(((NR - 1 - r) * 32) / NR), hi = Math.floor(((NR - r) * 32) / NR);
+      let s = 0;
+      for (let b = lo; b < hi; b++) s += bands[b];
+      const target = Math.min(1, (s / (hi - lo)) * 1.8) * react;
+      energy[r] += (target - energy[r]) * (1 - Math.exp(-dt * (target > energy[r] ? 5 : 1.4)));
+    }
+  }
+
+  window.JukeboxNebula = { create: (canvas) => createNebula(canvas, 16000), stepEnergy, NR };
+
+  const canvas = document.getElementById("space");
+  const neb = createNebula(canvas, N);
+  if (!neb) return; // no WebGL2 → stars + CSS nebula only
+  const gl = neb.gl;
+
   let W = 0, H = 0, dpr = 1;
   function resize() {
     dpr = 0.6; // render at 60 % of CSS resolution – the haze is soft anyway, and it keeps it smooth
@@ -191,8 +234,10 @@
   const silent = { bands: new Float32Array(32), playing: false };
   const energy = new Float32Array(NR);
   const t0 = performance.now();
-  let lastNow = t0;
-  let visible = true;
+  let lastNow = t0, t = 0;
+  const calm = () => reduced || !!window.A11Y?.get("calm");
+  const bgMode = () => window.A11Y?.get("bg") || "full";
+  let visible = true, drawn = false;
   document.addEventListener("visibilitychange", () => (visible = !document.hidden));
 
   function frame() {
@@ -202,33 +247,23 @@
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastNow) / 1000);
     lastNow = now;
-    const t = ((now - t0) / 1000) * (reduced ? 0.3 : 1);
+    t += dt * (calm() ? 0.25 : 1); // accumulated, so switching "reduce motion" never jumps
+    const mode = bgMode();
+    if (mode === "off") { if (drawn) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); drawn = false; } return; }
+    const react = mode === "soft" || calm() ? 0.35 : 1; // gentler reaction to the music
 
-    // ribbon energy: ribbon 0 (top) = treble … ribbon NR-1 (bottom) = bass; smooth & soft
-    for (let r = 0; r < NR; r++) {
-      const lo = Math.floor(((NR - 1 - r) * 32) / NR), hi = Math.floor(((NR - r) * 32) / NR);
-      let s = 0;
-      for (let b = lo; b < hi; b++) s += a.bands[b];
-      const target = Math.min(1, (s / (hi - lo)) * 1.8);
-      energy[r] += (target - energy[r]) * (1 - Math.exp(-dt * (target > energy[r] ? 5 : 1.4)));
-    }
+    stepEnergy(energy, a.bands, dt, react);
 
     const rect = stage.getBoundingClientRect();
     const cx = innerWidth / 2 * dpr, cy = (rect.top + rect.height * 0.48) * dpr;
-
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE); // additive glow
-    gl.useProgram(prog);
-    gl.bindVertexArray(vao);
-    gl.uniform1f(U.uTime, t);
-    gl.uniform1f(U.uDpr, dpr);
-    gl.uniform1fv(U.uEnergy, energy);
-    gl.uniform2f(U.uCenter, cx, cy);
-    gl.uniform2f(U.uView, W, H);
-    gl.uniform2f(U.uScale, W / 2, Math.max(rect.height, innerHeight * 0.6) * dpr);
-    gl.drawArrays(gl.POINTS, 0, N);
+    const unitY = Math.max(rect.height, innerHeight * 0.6);
+    // the lowest ribbon never goes below ~0.8 units under the centre: once that is above the screen, skip
+    if (rect.top + rect.height * 0.48 + unitY * 0.9 < 0) {
+      if (drawn) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); drawn = false; }
+      return;
+    }
+    drawn = true;
+    neb.draw({ t, energy, cx, cy, sx: W / 2, sy: unitY * dpr, dpr });
   }
   requestAnimationFrame(frame);
 })();

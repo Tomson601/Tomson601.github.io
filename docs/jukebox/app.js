@@ -139,7 +139,11 @@
         head.append(name, val);
         input = document.createElement("input");
         Object.assign(input, { type: "range", min: p.min, max: p.max, step: p.step });
-        shows[p.id] = () => (val.textContent = p.fmt ? p.fmt(+input.value) : input.value);
+        shows[p.id] = () => {
+          const txt = p.fmt ? p.fmt(+input.value) : input.value;
+          val.textContent = txt;
+          input.setAttribute("aria-valuetext", txt);
+        };
         input.addEventListener("input", shows[p.id]);
         lab.append(head, input);
       }
@@ -240,6 +244,22 @@
     c.addEventListener("click", () => ($("advanced").open = true));
     root.append(c);
     renderPresetNames();
+  }
+
+  // polite announcements for screen readers (separate from the visible status line)
+  let srTimer = 0;
+  function announce(text) {
+    const el = $("sr-live");
+    if (!el) return;
+    clearTimeout(srTimer);
+    el.textContent = "";
+    srTimer = setTimeout(() => (el.textContent = text), 120); // re-set so repeated text is read again
+  }
+  // what the current album is and how to listen to it
+  let guideKey = "";
+  function guideText() {
+    if (!guideKey) return "";
+    return `${T(guideKey)} ${T("g_map")}`;
   }
 
   function renderPresetNames() {
@@ -531,7 +551,7 @@
   }
 
   function buildVizImage(matrices, p) {
-    if (!matrices.length) { vizImage = null; return; }
+    if (!matrices.length) { vizImage = null; vizStats = []; renderVizSummary(); return; }
     const cols = p.columns, rows = p.rows, W = cols * matrices.length;
     const cv = document.createElement("canvas");
     cv.width = W; cv.height = rows;
@@ -548,6 +568,49 @@
     });
     g.putImageData(img, 0, 0);
     vizImage = { cv, frames: matrices.length, cols };
+    // what is actually played: the same note choice as renderFrames
+    vizStats = matrices.map((m) => {
+      let n = 0, h = 0, loud = 0;
+      const part = [0, 0, 0]; // loudness in the first, middle and last third
+      for (let c = 0; c < cols; c++) for (const r of topVoices(m, cols, rows, c, p.maxVoices, p.threshold)) {
+        const a = m[r * cols + c] ** p.gamma;
+        n++; h += 1 - r / Math.max(1, rows - 1); loud += a;
+        part[Math.min(2, Math.floor((c * 3) / cols))] += a;
+      }
+      const peak = part.indexOf(Math.max(...part));
+      const even = Math.max(...part) < 1.15 * Math.min(...part);
+      return { density: n / (cols * p.maxVoices), pitch: n ? h / n : 0.5, loud: n ? loud / n : 0, peak: even ? -1 : peak };
+    });
+    vizDims = { cols, rows };
+    renderVizSummary();
+  }
+
+  let vizStats = [], vizDims = null;
+  function renderVizSummary() {
+    const el = $("viz-sum");
+    if (!el) return;
+    if (!vizStats.length || !vizImage) { el.textContent = T("sum_none"); return; }
+    const dens = (d) => T(d < 0.05 ? "d_silent" : d < 0.35 ? "d_sparse" : d < 0.75 ? "d_medium" : "d_dense");
+    const pit = (x) => T(x < 0.4 ? "pt_low" : x > 0.6 ? "pt_high" : "pt_mid");
+    const name = (f) => (state.sources[f]?.name || "").split(" · ").pop();
+    const { cols, rows } = vizDims;
+    if (vizStats.length === 1) {
+      const v = vizStats[0];
+      el.textContent = `${T("sum_one", { cols, rows })} ${T("sum_frame1", { density: dens(v.density), pitch: pit(v.pitch) })} ${T(["pk_start", "pk_mid", "pk_end"][v.peak] || "pk_even")}`;
+      return;
+    }
+    const busy = vizStats.reduce((b, v, i) => (v.density * v.loud > vizStats[b].density * vizStats[b].loud ? i : b), 0);
+    const desc = (v) => T("sum_frame1", { density: dens(v.density), pitch: pit(v.pitch) }) + " " + T(["pk_start", "pk_mid", "pk_end"][v.peak] || "pk_even");
+    // neighbouring frames that sound alike are described once ("Frames 1–3: …")
+    const parts = [];
+    vizStats.forEach((v, f) => {
+      const d = desc(v), last = parts[parts.length - 1];
+      if (last && last.d === d) last.to = f; else parts.push({ from: f, to: f, d });
+    });
+    el.textContent = [T("sum_all", { n: vizStats.length, cols, rows, busy: `${busy + 1} (${name(busy)})` }),
+      ...parts.map((g) => (g.from === g.to
+        ? T("sum_frame", { i: g.from + 1, name: name(g.from), d: g.d })
+        : T("sum_frames", { a: g.from + 1, b: g.to + 1, d: g.d })))].join(" ");
   }
 
   let vizTimer = 0;
@@ -605,6 +668,7 @@
   const audio = { bands: new Float32Array(NB), bass: 0, mid: 0, high: 0, level: 0, kick: 0, playing: false };
   let bassAvg = 0;
 
+  let lastGlow = -1;
   function updateAudio() {
     const on = !!state.node;
     audio.playing = on;
@@ -635,7 +699,14 @@
     if (audio.bass - bassAvg > 0.08 && audio.kick < 0.4) audio.kick = 1;
     bassAvg += (audio.bass - bassAvg) * 0.05;
     audio.kick *= 0.9;
-    $("glow").style.opacity = Math.min(1, audio.level * 1.3 + audio.kick * 0.25).toFixed(3);
+    const bgMode = window.A11Y?.get("bg") || "full";
+    const glow = bgMode === "off" ? 0
+      : bgMode === "soft" ? Math.min(0.45, audio.level * 0.6)
+      : Math.min(1, audio.level * 1.3 + audio.kick * 0.25);
+    if (Math.abs(glow - lastGlow) > 0.004 || (glow === 0 && lastGlow !== 0)) {
+      lastGlow = glow;
+      $("glow").style.opacity = glow.toFixed(3);
+    }
   }
 
   // ------------------------------------------------------------------------ //
@@ -651,7 +722,11 @@
       state.analyser = state.ctx.createAnalyser();
       state.analyser.fftSize = 1024;
       state.analyser.smoothingTimeConstant = 0.55;
-      state.analyser.connect(state.ctx.destination);
+      state.out = state.ctx.createGain();        // final mix – also tapped by the video recorder
+      state.master = state.ctx.createGain();     // mute switch (M)
+      state.master.gain.value = state.muted ? 0 : 1;
+      state.analyser.connect(state.out).connect(state.master).connect(state.ctx.destination);
+      applyMono();
       // gentle limiter so melody + beat never clip
       state.mix = state.ctx.createDynamicsCompressor();
       state.mix.threshold.value = -3; state.mix.knee.value = 2; state.mix.ratio.value = 12;
@@ -818,6 +893,19 @@
         c.type = "button";
         c.className = "cell" + (s % 4 === 0 ? " beat-start" : "");
         c.dataset.step = s;
+        c.tabIndex = row === window.Beat.ROWS[0] && s === 0 ? 0 : -1;
+        c.addEventListener("keydown", (e) => {
+          const ri = window.Beat.ROWS.indexOf(row);
+          const mv = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0], Home: [0, -s], End: [0, 15 - s] }[e.key];
+          if (!mv) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const nr = window.Beat.ROWS[(ri + mv[0] + window.Beat.ROWS.length) % window.Beat.ROWS.length];
+          const ns = (s + mv[1] + window.Beat.STEPS) % window.Beat.STEPS;
+          c.tabIndex = -1;
+          seqCells[nr][ns].tabIndex = 0;
+          seqCells[nr][ns].focus();
+        });
         c.addEventListener("click", () => {
           ensureCtx();
           editBeat((p) => { p.rows[row][s] = ((p.rows[row][s] || 0) + 1) % 3; });
@@ -854,6 +942,7 @@
     });
     $("beat-desc").textContent = T("beat_" + b.style + "_desc");
     $("beat-vol").value = b.vol;
+    $("beat-vol").setAttribute("aria-valuetext", Math.round(b.vol * 100) + " %");
     $("beat-vol-val").textContent = Math.round(b.vol * 100) + " %";
     $("beat-vol").disabled = b.style === "off";
     const btn = $("btn-beat");
@@ -908,11 +997,29 @@
     seqStep = step;
   }
 
+  function playingLine() {
+    return T("st_playing", { preset: presetName(state.preset), n: state.sources.length, dur: fmt(state.result.duration) }) +
+      (beatOn() ? ` · ♫ ${beatName(state.beat.style)} ${window.Beat.bpmOf(state.result.p.noteLen, patternOf(state.beat.style))} BPM` : "");
+  }
   function renderPlayingStatus() {
     if (!state.node || !state.result) return;
-    const dur = state.result.duration;
-    setStatus(() => T("st_playing", { preset: presetName(state.preset), n: state.sources.length, dur: fmt(dur) }) +
-      (beatOn() ? ` · ♫ ${beatName(state.beat.style)} ${window.Beat.bpmOf(state.result.p.noteLen, patternOf(state.beat.style))} BPM` : ""));
+    setStatus(() => playingLine());
+  }
+
+  // mono sound (accessibility): downmix the final output to one channel, played on both sides
+  function applyMono() {
+    if (!state.out) return;
+    const mono = !!window.A11Y?.get("mono");
+    state.out.channelCountMode = "explicit";
+    state.out.channelInterpretation = "speakers";
+    state.out.channelCount = mono ? 1 : 2;
+  }
+  window.A11Y?.onChange((k) => { if (k === "mono") applyMono(); });
+
+  function toggleMute() {
+    state.muted = !state.muted;
+    if (state.master) state.master.gain.setTargetAtTime(state.muted ? 0 : 1, state.ctx.currentTime, 0.02);
+    say(state.muted ? "st_muted" : "st_unmuted");
   }
 
   function killNode() {
@@ -984,7 +1091,7 @@
     updateDeck(0);
   }
 
-  function finish() { stop(); say("st_finished"); }
+  function finish() { stop(); say("st_finished"); recorder?.finish(); }
 
   function togglePlay() {
     if (state.node) { pause(); return; }
@@ -1005,24 +1112,42 @@
     return state.offset;
   }
 
+  let spokenFrame = -1;
+  // only touch the DOM when something visible actually changes (this runs every frame while playing)
+  const deckCache = {};
+  function setDeck(key, value, write) {
+    if (deckCache[key] === value) return;
+    deckCache[key] = value;
+    write(value);
+  }
   function updateDeck(t) {
     const r = state.result && !state.dirty ? state.result : null;
     const dur = r ? r.duration : 0;
-    $("np-time").textContent = `${fmt(t)} / ${fmt(dur)}`;
+    const time = `${fmt(t)} / ${fmt(dur)}`;
     const frac = dur ? Math.min(1, t / dur) : 0;
-    $("progress-fill").style.width = `${(frac * 100).toFixed(2)}%`;
-    $("progress").setAttribute("aria-valuenow", Math.round(frac * 100));
+    setDeck("time", time, (v) => {
+      $("np-time").textContent = v;
+      $("progress").setAttribute("aria-valuetext", v);
+    });
+    setDeck("fill", frac.toFixed(4), (v) => ($("progress-fill").style.transform = `scaleX(${v})`));
+    setDeck("pct", Math.round(frac * 100), (v) => $("progress").setAttribute("aria-valuenow", v));
     if (r && state.sources.length) {
       const col = t / r.p.noteLen, total = r.p.columns * r.matrices.length;
       const frame = Math.min(r.matrices.length - 1, Math.floor(col / r.p.columns));
-      $("np-title").textContent = state.sources[frame]?.name ?? "";
+      setDeck("title", state.sources[frame]?.name ?? "", (v) => ($("np-title").textContent = v));
+      if (state.node && frame !== spokenFrame && col < total) {
+        if (spokenFrame >= 0 || frame > 0) { // the first frame is already announced with the record
+          if (r.matrices.length > 1) announce(T("sr_frame", { i: frame + 1, n: r.matrices.length, name: state.sources[frame]?.name ?? "" }));
+        }
+        spokenFrame = frame;
+      }
       if (state.node) {
         paintViz(Math.min(col, total));
         setActiveThumb(col < total ? frame : -1);
         setLabel(frame);
       }
     } else if (state.sources.length) {
-      $("np-title").textContent = state.sources[0].name;
+      setDeck("title", state.sources[0].name, (v) => ($("np-title").textContent = v));
     }
   }
 
@@ -1034,6 +1159,9 @@
     play.classList.toggle("on", playing);
     $("btn-stop").disabled = !(playing || state.paused);
     $("btn-wav").disabled = $("btn-mid").disabled = !(state.result && !state.dirty);
+    if ($("dl-wav")) $("dl-wav").disabled = $("dl-mid").disabled = $("btn-wav").disabled;
+    const canVideo = state.sources.length > 0;
+    if ($("btn-video")) $("btn-video").disabled = $("dl-video").disabled = !canVideo;
     $("pp-name").textContent = presetName(state.preset);
   }
 
@@ -1061,6 +1189,7 @@
     state.sources = state.all.filter((src) => src.on);
     state.result = null;
     state.dirty = true;
+    spokenFrame = -1;
     labelIdx = -1;
     setLabel(0);
     renderThumbs();
@@ -1134,6 +1263,7 @@
       try { out.push(await blobToSource(f, f.name)); } catch { bad.push(f.name); }
     }
     setSources(out);
+    if (out.length) { guideKey = "gd_files"; announce(guideText()); }
     setStatus(() => (out.length
       ? T("st_loaded", { n: out.length }) + (bad.length ? T("st_skipped", { list: bad.join(", ") }) : "")
       : T("st_cant_read")), !out.length);
@@ -1190,6 +1320,7 @@
       }
       setSources(out);
       say("st_fetched", { n: out.length, date });
+      guideKey = "gd_epic"; announce(`${T("st_fetched", { n: out.length, date })} ${guideText()}`);
       return true;
     } catch (e) {
       const msg = e.message || String(e);
@@ -1259,7 +1390,20 @@
     return recCache.get(r.id);
   }
 
-  const labelImgs = RECORDS.map((r) => Object.assign(new Image(), { src: `records/${r.id}-label.webp` }));
+  // From disk (file://) the labels come from embedded.js as data URIs, so the magazine canvas stays readable
+  // for the video export; the same goes for a clean copy of the jukebox artwork.
+  const fromDisk = location.protocol === "file:";
+  const labelImgs = RECORDS.map((r) => {
+    const im = new Image();
+    if (fromDisk) recordUrl(`${r.id}-label`).then((u) => u && (im.src = u)).catch(() => {});
+    else im.src = `records/${r.id}-label.webp`;
+    return im;
+  });
+  let jukeboxArt = document.querySelector(".stage img");
+  if (fromDisk) {
+    jukeboxArt = new Image();
+    recordUrl("jukebox").then((u) => u && (jukeboxArt.src = u)).catch(() => {});
+  }
   const carousel = window.Carousel
     ? new window.Carousel($("carousel"), {
         slots: RECORDS.map((r, i) => ({ slot: SLOTS[i], label: labelImgs[i], get title() { return r.title; } })),
@@ -1300,6 +1444,8 @@
       if (token !== pickToken) return;
       setSources(album, true);
       say("st_record", () => ({ t: r.title, sub: r.sub }));
+      guideKey = "gd_" + r.id;
+      announce(`${r.title}, ${r.sub}. ${guideText()}`);
       if (autoplay) play(0);
     } catch (e) {
       if (token === pickToken) setStatus(e.message || String(e), true);
@@ -1353,14 +1499,32 @@
     if (e.key === "ArrowRight") seek(Math.min(1, (t + 5) / d));
     if (e.key === "ArrowLeft") seek(Math.max(0, (t - 5) / d));
   });
+  // keyboard shortcuts (listed in the Accessibility panel)
   document.addEventListener("keydown", (e) => {
-    if (e.code === "Space" && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)) {
-      e.preventDefault();
-      togglePlay();
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (document.querySelector("dialog[open]")) return; // dialogs handle their own keys (Esc closes)
+    const tag = document.activeElement?.tagName || "";
+    if (/INPUT|SELECT|TEXTAREA/.test(tag)) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const go = (fn) => { e.preventDefault(); fn(); };
+    if (e.code === "Space" || k === "k") { if (tag !== "BUTTON" || k === "k") go(togglePlay); return; }
+    if (tag === "BUTTON" && (k === "Enter")) return;
+    if (/^Arrow/.test(k) && document.activeElement?.closest('[role="radiogroup"], .seq')) return;
+    switch (k) {
+      case "ArrowRight": if (state.result) go(() => seek(Math.min(1, (currentTime() + 5) / state.result.duration))); break;
+      case "ArrowLeft": if (state.result) go(() => seek(Math.max(0, (currentTime() - 5) / state.result.duration))); break;
+      case "s": go(stop); break;
+      case "n": go(() => { ensureCtx(); pickRecord((Math.max(-1, state.record) + 1) % RECORDS.length); }); break;
+      case "p": go(() => { ensureCtx(); pickRecord((Math.max(0, state.record) - 1 + RECORDS.length) % RECORDS.length); }); break;
+      case "b": go(() => { ensureCtx(); setBeat(state.beat.style === "off" ? state.beat.last : "off"); }); break;
+      case "m": go(() => { ensureCtx(); toggleMute(); }); break;
+      case "a": go(() => window.A11Y?.open()); break;
+      case "v": go(openVideo); break;
+      case "?": case "h": go(() => openHelp()); break;
     }
   });
-  $("btn-wav").addEventListener("click", async () => {
-    if (!state.result) return;
+  // melody + beat at the chosen volumes (what the WAV and the video contain)
+  async function mixdown() {
     let { L, R } = state.result;
     const bb = beatOn() ? await ensureBeat() : null;
     if (bb) { // melody + beat, re-normalised
@@ -1372,13 +1536,27 @@
       }
       normalize(L, R);
     }
+    if (window.A11Y?.get("mono")) {
+      const M = new Float32Array(L.length);
+      for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) / 2;
+      L = R = M;
+    }
+    return { L, R };
+  }
+  $("btn-wav").addEventListener("click", async () => {
+    if (!state.result) return;
+    const { L, R } = await mixdown();
     download(wavBlob(L, R), "jukebox.wav");
   });
   $("btn-mid").addEventListener("click", () => state.result && download(midiBlob(state.result.matrices, state.result.midi, state.result.p), "jukebox.mid"));
   window.addEventListener("resize", () => paintViz(-1));
 
   // main music volume (the image melody) – live, remembered
-  const showMusicVol = () => ($("music-vol-val").textContent = Math.round(state.musicVol * 100) + " %");
+  const showMusicVol = () => {
+    const txt = Math.round(state.musicVol * 100) + " %";
+    $("music-vol-val").textContent = txt;
+    $("music-vol").setAttribute("aria-valuetext", txt);
+  };
   $("music-vol").value = state.musicVol;
   showMusicVol();
   $("music-vol").addEventListener("input", (e) => {
@@ -1395,9 +1573,128 @@
   $("beat-vol").addEventListener("input", (e) => {
     state.beat.vol = +e.target.value;
     $("beat-vol-val").textContent = Math.round(state.beat.vol * 100) + " %";
+    $("beat-vol").setAttribute("aria-valuetext", Math.round(state.beat.vol * 100) + " %");
     if (state.beatGain && beatOn()) state.beatGain.gain.setTargetAtTime(state.beat.vol, state.ctx.currentTime, 0.03);
     saveBeat();
   });
+
+  // ---- video export (record.js) ----
+  const recorder = window.JukeboxRecorder?.create({
+    T,
+    ctx: () => state.ctx,
+    tap: () => state.out,
+    async prepare() {
+      ensureCtx();
+      stop();
+      if (!state.sources.length) throw new Error(T("np_pick"));
+      if (state.dirty || !state.result) compose();
+      await ensureBeat();
+      scrollTo(0, 0);
+    },
+    playFromStart: () => play(0),
+    async offline() {
+      ensureCtx();
+      stop();
+      if (!state.sources.length) throw new Error(T("np_pick"));
+      if (state.dirty || !state.result) compose();
+      await ensureBeat();
+      const r = state.result;
+      const { L, R } = await mixdown();
+      const labels = await Promise.all(state.sources.map((src) => new Promise((res) => {
+        const im = new Image();
+        im.onload = im.onerror = () => res(im);
+        im.src = src.thumb;
+      })));
+      const rec = state.record >= 0 ? RECORDS[state.record] : null;
+      const names = state.sources.map((src) => src.name);
+      return {
+        L, R, sr: SR, duration: L.length / SR,
+        sub: rec ? `${rec.title} – ${rec.sub}` : names[0] || "",
+        line: playingLine(),
+        at(t) { // which image is playing at time t
+          const f = Math.max(0, Math.min(names.length - 1, Math.floor(t / r.p.noteLen / r.p.columns)));
+          return { title: names[f], label: labels[f] };
+        },
+      };
+    },
+    carouselAt: (phi) => carousel?.snapshot(phi) || $("carousel"),
+    jukeboxImage: () => jukeboxArt,
+    carouselPhi: () => carousel?.rotation ?? 0,
+    info: () => {
+      const r = state.result && !state.dirty ? state.result : null;
+      const rec = state.record >= 0 ? RECORDS[state.record] : null;
+      const src = state.sources[Math.max(0, labelIdx)];
+      if (src && labelImg.src !== src.thumb) labelImg.src = src.thumb;
+      return {
+        time: currentTime(), duration: r ? r.duration : 0,
+        title: $("np-title").textContent, sub: rec ? `${rec.title} – ${rec.sub}` : src?.name || "",
+        line: state.node ? $("status").textContent : "",
+        label: src ? labelImg : null, playing: !!state.node, loaded: $("vinyl").classList.contains("loaded"),
+      };
+    },
+  });
+  const labelImg = new Image();
+  let videoFmt = "wide";
+
+  function openVideo() {
+    const dlg = $("video");
+    if (!recorder?.type) {
+      $("vid-type").textContent = T("st_vid_unsupported");
+      $("vid-start").disabled = true;
+    } else {
+      $("vid-type").textContent = T("vid_type", { t: recorder.ext.toUpperCase() }) + (recorder.ext === "webm" ? T("vid_webm_note") : "");
+    }
+    const dur = state.result && !state.dirty ? state.result.duration : null;
+    $("vid-note").textContent = T(recorder?.fast ? "vid_note_fast" : "vid_note", { dur: dur ? fmt(dur) : "…" });
+    $("vid-start").textContent = T(recorder?.fast ? "vid_start_fast" : "vid_start");
+    renderVideoFormats();
+    $("vid-progress").hidden = true;
+    $("vid-start").hidden = false;
+    $("vid-cancel").textContent = T("close");
+    if (!dlg.open) dlg.showModal();
+  }
+
+  function renderVideoFormats() {
+    document.querySelectorAll("[data-vfmt]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.vfmt === videoFmt)));
+  }
+
+  async function startVideo() {
+    if (!recorder || recorder.active) return;
+    $("vid-start").hidden = true;
+    $("vid-progress").hidden = false;
+    $("vid-cancel").textContent = T("vid_cancel");
+    $("vid-time").textContent = T("vid_preparing");
+    $("vid-bar").style.width = "0%";
+    try {
+      const res = await recorder.start(videoFmt, (t, d) => {
+        $("vid-time").textContent = recorder.live ? T("vid_rec", { t: fmt(t), d: fmt(d) })
+          : T("vid_render", { p: d ? Math.min(100, Math.round((t / d) * 100)) : 0 });
+        $("vid-bar").style.width = (d ? Math.min(100, (t / d) * 100) : 0).toFixed(1) + "%";
+      });
+      $("video").close();
+      if (!res) { say("st_vid_cancel"); return; }
+      const name = (state.record >= 0 ? RECORDS[state.record].id : "jukebox") + "." + res.ext;
+      download(res.blob, name);
+      say("st_vid_done", { size: (res.blob.size / 1048576).toFixed(1) });
+    } catch (e) {
+      $("video").close();
+      setStatus(e.message || String(e), true);
+    }
+  }
+
+  if (recorder) {
+    document.querySelectorAll("[data-vfmt]").forEach((b) => b.addEventListener("click", () => { videoFmt = b.dataset.vfmt; renderVideoFormats(); }));
+    $("vid-start").addEventListener("click", () => { ensureCtx(); startVideo(); });
+    $("vid-cancel").addEventListener("click", () => {
+      if (recorder.active) { recorder.finish(true); stop(); } else $("video").close();
+    });
+    $("video").addEventListener("cancel", (e) => { // Esc
+      if (recorder.active) { e.preventDefault(); recorder.finish(true); stop(); }
+    });
+  }
+  for (const id of ["btn-video", "dl-video"]) $(id)?.addEventListener("click", () => { ensureCtx(); openVideo(); });
+  $("dl-wav")?.addEventListener("click", () => $("btn-wav").click());
+  $("dl-mid")?.addEventListener("click", () => $("btn-mid").click());
 
   // language switcher
   document.querySelectorAll("[data-lang]").forEach((b) => b.addEventListener("click", () => I18N.setLang(b.dataset.lang)));
@@ -1411,8 +1708,10 @@
     renderRecords();
     renderThumbs();
     updateButtons();
+    for (const k in deckCache) delete deckCache[k];
     updateDeck(currentTime());
     renderStatus();
+    renderVizSummary();
   });
   paintViz(-1);
   updateButtons();

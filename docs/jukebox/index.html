@@ -14,6 +14,7 @@
   <link rel="preload" as="image" href="jukebox.webp">
   <link rel="stylesheet" href="style.css">
   <script src="i18n.js"></script>
+  <script src="a11y.js"></script>
 </head>
 <body>
   <!-- tło: gwiazdy + cząsteczki reagujące na muzykę -->
@@ -24,6 +25,7 @@
     <header class="topbar">
       <h1>JukeBox</h1>
       <div class="top-right">
+        <button type="button" id="btn-a11y" class="a11y-btn" data-i18n-attr="aria-label:a11y_title;title:a11y_title"><svg viewBox="0 0 24 24" aria-hidden="true" class="ico"><circle cx="12" cy="4.2" r="2" fill="currentColor"/><path d="M4.5 8.2c2.4.7 4.9 1 7.5 1s5.1-.3 7.5-1M12 9.2v5.3m0 0-3.2 6.8m3.2-6.8 3.2 6.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="lang" role="group" data-i18n-attr="aria-label:lang_label">
           <button type="button" data-lang="en" title="English" lang="en">EN</button>
           <button type="button" data-lang="pl" title="Polski" lang="pl">PL</button>
@@ -37,8 +39,8 @@
       <div id="stage" class="stage">
         <div id="glow" class="glow"></div>
         <img src="jukebox.webp" alt="JukeBox" width="1440" height="1030" draggable="false">
-        <canvas id="carousel" class="carousel" data-i18n-attr="aria-label:carousel"></canvas>
-        <div id="vinyl" class="vinyl" data-i18n-attr="title:vinyl">
+        <canvas id="carousel" class="carousel" aria-hidden="true"></canvas>
+        <div id="vinyl" class="vinyl" data-i18n-attr="title:vinyl" aria-hidden="true">
           <div class="grooves"></div>
           <div id="label" class="label"></div>
           <div class="hole"></div>
@@ -69,6 +71,7 @@
             <div class="exports">
               <button id="btn-wav" class="tag" disabled>WAV</button>
               <button id="btn-mid" class="tag" disabled>MIDI</button>
+              <button id="btn-video" class="tag" data-i18n="vid_btn" disabled>Video</button>
             </div>
           </div>
         </div>
@@ -78,6 +81,7 @@
     <nav class="records" id="records" data-i18n-attr="aria-label:records_nav"></nav>
 
     <p id="status" class="status" role="status"></p>
+    <p id="sr-live" class="sr-only" aria-live="polite"></p>
   </section>
 
   <main>
@@ -177,8 +181,15 @@
 
     <section class="panel">
       <h2 data-i18n="score_h">Score</h2>
-      <canvas id="viz"></canvas>
+      <canvas id="viz" role="img" data-i18n-attr="aria-label:sum_h" aria-describedby="viz-sum"></canvas>
+      <p id="viz-sum" class="sr-only"></p>
       <p class="hint" data-i18n="score_hint"></p>
+      <div class="downloads">
+        <span class="seq-label" data-i18n="downloads">Download</span>
+        <button id="dl-wav" class="small" type="button" disabled>WAV</button>
+        <button id="dl-mid" class="small" type="button" disabled>MIDI</button>
+        <button id="dl-video" class="small" type="button" disabled>🎬 <span data-i18n="vid_btn">Video</span></button>
+      </div>
     </section>
   </main>
 
@@ -194,6 +205,71 @@
     </div>
   </dialog>
 
+  <dialog id="a11y" class="help" aria-labelledby="a11y-title">
+    <div class="help-head">
+      <h3 id="a11y-title" data-i18n="a11y_title">Accessibility</h3>
+      <button id="a11y-close" class="help-x" type="button" data-i18n-attr="aria-label:close">✕</button>
+    </div>
+    <div class="help-body a11y-body">
+      <label class="a11y-opt"><input type="checkbox" data-a11y="calm">
+        <span><b data-i18n="a11y_calm">Reduce motion</b><small data-i18n="a11y_calm_d"></small></span></label>
+      <div class="a11y-opt">
+        <span><b data-i18n="a11y_bg">Background visualisation</b><small data-i18n="a11y_bg_d"></small></span>
+        <div class="seg" role="radiogroup" data-i18n-attr="aria-label:a11y_bg">
+          <button type="button" role="radio" data-a11y="bg" data-value="full" data-i18n="a11y_bg_full">Full</button>
+          <button type="button" role="radio" data-a11y="bg" data-value="soft" data-i18n="a11y_bg_soft">Gentle</button>
+          <button type="button" role="radio" data-a11y="bg" data-value="off" data-i18n="a11y_bg_off">Off</button>
+        </div>
+      </div>
+      <label class="a11y-opt"><input type="checkbox" data-a11y="contrast">
+        <span><b data-i18n="a11y_contrast">High contrast</b><small data-i18n="a11y_contrast_d"></small></span></label>
+      <label class="a11y-opt"><input type="checkbox" data-a11y="large">
+        <span><b data-i18n="a11y_large">Larger text</b><small data-i18n="a11y_large_d"></small></span></label>
+      <label class="a11y-opt"><input type="checkbox" data-a11y="mono">
+        <span><b data-i18n="a11y_mono">Mono sound</b><small data-i18n="a11y_mono_d"></small></span></label>
+
+      <h4 data-i18n="keys_h">Keyboard shortcuts</h4>
+      <dl class="keys">
+        <dt><kbd>Space</kbd> / <kbd>K</kbd></dt><dd data-i18n="k_play"></dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd data-i18n="k_seek"></dd>
+        <dt><kbd>S</kbd></dt><dd data-i18n="k_stop"></dd>
+        <dt><kbd>N</kbd> / <kbd>P</kbd></dt><dd data-i18n="k_rec"></dd>
+        <dt><kbd>B</kbd></dt><dd data-i18n="k_beat"></dd>
+        <dt><kbd>M</kbd></dt><dd data-i18n="k_mute"></dd>
+        <dt><kbd>V</kbd></dt><dd data-i18n="k_video"></dd>
+        <dt><kbd>A</kbd></dt><dd data-i18n="k_a11y"></dd>
+        <dt><kbd>H</kbd> / <kbd>?</kbd></dt><dd data-i18n="k_help"></dd>
+        <dt><kbd>Esc</kbd></dt><dd data-i18n="k_esc"></dd>
+      </dl>
+      <p data-i18n="k_grid"></p>
+    </div>
+  </dialog>
+
+  <dialog id="video" class="help" aria-labelledby="video-title">
+    <div class="help-head">
+      <h3 id="video-title" data-i18n="vid_title">Record a video</h3>
+    </div>
+    <div class="help-body">
+      <p data-i18n="vid_intro"></p>
+      <h4 data-i18n="vid_format">Format</h4>
+      <div class="seg vid-formats" role="radiogroup" data-i18n-attr="aria-label:vid_format">
+        <button type="button" role="radio" data-vfmt="wide"><i class="ar ar-wide"></i><span data-i18n="vid_wide">Wide 16:9</span></button>
+        <button type="button" role="radio" data-vfmt="square"><i class="ar ar-square"></i><span data-i18n="vid_square">Square 1:1</span></button>
+        <button type="button" role="radio" data-vfmt="tall"><i class="ar ar-tall"></i><span data-i18n="vid_tall">Vertical 9:16</span></button>
+      </div>
+      <p id="vid-note"></p>
+      <p id="vid-type" class="vid-type"></p>
+      <div id="vid-progress" class="vid-progress" hidden>
+        <div class="vid-track"><div id="vid-bar" class="vid-bar"></div></div>
+        <span id="vid-time" role="status"></span>
+      </div>
+      <div class="adv-actions vid-actions">
+        <button id="vid-start" class="vid-go" type="button">⏺ <span data-i18n="vid_start">Start recording</span></button>
+        <button id="vid-cancel" class="vid-cancel" type="button" data-i18n="close">Close</button>
+      </div>
+    </div>
+  </dialog>
+
   <footer>
     <p class="authors"><span data-i18n="authors">Authors</span>
       Zofia Modelska · Oleksandra Simeonidi · Aleksandra Mazurek · Tomasz Jarko</p>
@@ -205,6 +281,8 @@
   <script>I18N.apply();</script>
   <script src="carousel.js"></script>
   <script src="beat.js"></script>
+  <script src="vendor/mp4-muxer.min.js"></script>
+  <script src="record.js"></script>
   <script src="app.js"></script>
   <script src="space.js"></script>
 </body>

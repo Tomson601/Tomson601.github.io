@@ -44,6 +44,8 @@ Each type of data has its own melody. Storm belts, ocean winds or a carbon-monox
 - 🌌 **Audio-reactive nebula.** Soft WebGL ribbons behind the jukebox breathe with the bass, mids and highs.
 - 📊 **Score view.** A heat-map of exactly what gets played, with a moving playhead.
 - 💾 **Export.** Download the piece as **WAV** (44.1 kHz, 16-bit stereo) or **MIDI**, to open in any DAW.
+- 🎬 **Video export.** Record an **MP4** (WebM in Firefox) of the jukebox, the spinning record and the music-reactive nebula, together with the music. Formats: 16:9, 1:1 and 9:16. The video is rendered straight from the finished music, faster than real time, so nothing has to play while it is made.
+- ♿ **Accessibility.** Reduce motion, a gentle or hidden background (no flashing), high contrast, larger text, mono sound, full keyboard control with shortcuts, and screen-reader-friendly controls. For blind users, every record comes with a spoken guide to what it shows and how to listen to it, the score has a text description, and frame changes are announced while the music plays. All settings are remembered.
 - 📱 **Works everywhere.** Responsive on desktop and mobile, with no install, no account and no server. Everything is computed in the browser.
 
 ---
@@ -136,6 +138,9 @@ docs/jukebox/
 ├── app.js            sonification engine, playback, presets, EPIC download, WAV/MIDI export
 ├── beat.js           backing beat: one bar synthesised with OfflineAudioContext, tiled to the track length
 ├── i18n.js           translations (EN / PL / UA) and the language switcher logic
+├── a11y.js           accessibility settings (motion, background, contrast, text size, mono)
+├── record.js         video export: draws every frame on a canvas and encodes it to MP4 with WebCodecs
+├── vendor/           mp4-muxer (MIT) – writes the encoded video and audio into an MP4 file
 ├── carousel.js       rotating record magazine (2D canvas drawn into the jukebox)
 ├── space.js          starfield + audio-reactive WebGL2 nebula
 ├── jukebox.webp      jukebox artwork

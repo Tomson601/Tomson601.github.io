@@ -39,6 +39,10 @@
         const i = this.hit(e);
         if (i >= 0) this.onPick(i);
       });
+      this.onScreen = true;
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver(([e]) => (this.onScreen = e.isIntersecting)).observe(canvas);
+      }
       requestAnimationFrame((t) => this.frame(t));
     }
 
@@ -174,13 +178,14 @@
       requestAnimationFrame((t) => this.frame(t));
       const dt = Math.min(0.05, (now - this.last) / 1000);
       this.last = now;
+      if (!this.onScreen && !this.spin && !this.lift) return; // nothing to see, nothing pending
 
       if (this.spin) {
         const sp = this.spin, t = Math.min(1, (now - sp.t0) / sp.dur);
         this.phi = sp.from + (sp.to - sp.from) * ease(t);
         if (t >= 1) { this.spin = null; sp.resolve(); }
       } else if (!this.lift) {
-        this.phi += dt * (this.playing ? 0.05 : 0.14); // the magazine keeps slowly turning
+        if (!window.A11Y?.get("calm")) this.phi += dt * (this.playing ? 0.05 : 0.14); // the magazine keeps slowly turning
       }
 
       let liftP = 0, liftSlot = -1;
@@ -195,6 +200,21 @@
         }
       }
 
+      this.draw(liftP, liftSlot);
+    }
+
+    /** Draw the magazine as it would look at rotation `phi` (record already up) – for the video export. */
+    snapshot(phi) {
+      const keep = this.phi;
+      this.phi = phi;
+      this.draw(0, -1);
+      this.phi = keep;
+      return this.cv;
+    }
+
+    get rotation() { return this.phi; }
+
+    draw(liftP, liftSlot) {
       const g = this.g;
       g.setTransform(this.scale, 0, 0, this.scale, -BOX.x * this.scale, -BOX.y * this.scale);
       g.clearRect(BOX.x, BOX.y, BOX.w, BOX.h);
