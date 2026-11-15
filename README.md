@@ -178,6 +178,12 @@ The JavaScript engine is a faithful port of the Python prototype (`numpy` + `mid
   </tr>
 </table>
 
+## 📄 License
+
+The JukeBox code is released under the [MIT License](LICENSE).
+The NASA images belong to their providers (NASA EPIC / DSCOVR, NASA GMAO, NASA GPM) and are used here under NASA's media guidelines.
+The bundled [mp4-muxer](docs/jukebox/vendor/mp4-muxer.LICENSE) library is MIT-licensed by its author.
+
 <div align="center">
 <br>
 <sub>Made with 🎶 and a lot of satellite data.</sub>
